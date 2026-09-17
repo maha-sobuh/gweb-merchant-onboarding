@@ -1,4 +1,4 @@
-"""Single-table DynamoDB access for Merchant Onboarding.
+﻿"""Single-table DynamoDB access for Merchant Onboarding.
 
 WHY single-table:
 - One application is a cluster of related records that will grow:
@@ -13,15 +13,19 @@ WHY these keys:
 - APP#{applicationId} / METADATA isolates the lookup used by GET.
 - IDEM#{sha256(key)} / CREATE_APPLICATION implements POST idempotency
   as a second item type in the SAME table (no GSI required in Phase 1).
+- APP#{applicationId} / PERSON#{personId} (Phase 2) keeps every person
+  attached to an application in the same partition as METADATA, so a
+  future Query(PK=APP#{id}) returns the whole aggregate in one round trip.
 
 Concurrency:
 - Create uses ConditionExpression attribute_not_exists(PK) so a duplicate
   applicationId cannot overwrite an existing item (409).
-- Updates (later phases) MUST use optimistic concurrency on `version`:
+- Updates use optimistic concurrency on `version`:
       ConditionExpression = "version = :expected"
       SET version = version + 1, updated_at = :now, ...
   A mismatch means another writer won; the caller retries after a GetItem.
-  Never blind-PutItem an existing METADATA row.
+  Never blind-PutItem an existing row. upsert_person (Phase 2) is the
+  first real implementation of this pattern.
 
 This is the ONLY module that may import boto3.
 """
@@ -36,7 +40,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from common.errors import ConflictError
+from common.errors import ConflictError, NotFoundError
 from models.application import (
     ENTITY_TYPE_IDEMPOTENCY,
     METADATA_SK,
@@ -46,6 +50,7 @@ from models.application import (
     idempotency_pk,
     utc_now_iso,
 )
+from models.applicant import Applicant, PersonRecord, person_pk, person_sk
 
 logger = logging.getLogger("merchant_onboarding.repo")
 
@@ -181,6 +186,75 @@ class ApplicationRepository:
             "Phase 1 has no updates. Future writers must ConditionExpression "
             "on version and SET version = version + 1."
         )
+
+    # --- Phase 2: applicant / person records -------------------------------
+
+    def get_person(self, application_id: str, person_id: str) -> PersonRecord | None:
+        response = self._table.get_item(
+            Key={"PK": person_pk(application_id), "SK": person_sk(person_id)},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return PersonRecord.from_item(item)
+
+    def upsert_person(
+        self,
+        application_id: str,
+        data: Applicant,
+        person_id: str,
+        expected_version: int | None,
+    ) -> tuple[PersonRecord, bool]:
+        """Create a new person or update an existing one.
+
+        - expected_version is None -> create. Guarded by attribute_not_exists
+          so a reused person_id cannot silently overwrite an existing record.
+        - expected_version is provided -> optimistic-concurrency update, the
+          real implementation of the pattern documented in
+          update_metadata_optimistic above.
+
+        Returns (record, created).
+        """
+        now = utc_now_iso()
+
+        if expected_version is None:
+            record = PersonRecord.from_applicant(application_id, person_id, data, now, version=1)
+            try:
+                self._table.put_item(
+                    Item=record.to_item(),
+                    ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+                )
+            except ClientError as exc:
+                if _is_conditional_check_failed(exc):
+                    raise ConflictError(
+                        "A person with this id already exists; supply expected_version to update it"
+                    ) from exc
+                logger.exception("DynamoDB error creating person")
+                raise
+            return record, True
+
+        existing = self.get_person(application_id, person_id)
+        if existing is None:
+            raise NotFoundError("Person not found on this application")
+
+        record = PersonRecord.from_applicant(
+            application_id, person_id, data, existing.created_at, version=expected_version + 1
+        )
+        try:
+            self._table.put_item(
+                Item=record.to_item(),
+                ConditionExpression="attribute_exists(PK) AND version = :expected",
+                ExpressionAttributeValues={":expected": expected_version},
+            )
+        except ClientError as exc:
+            if _is_conditional_check_failed(exc):
+                raise ConflictError(
+                    "Person was modified concurrently; refetch and retry with the current version"
+                ) from exc
+            logger.exception("DynamoDB error updating person")
+            raise
+        return record, False
 
 
 def _is_conditional_check_failed(exc: ClientError) -> bool:

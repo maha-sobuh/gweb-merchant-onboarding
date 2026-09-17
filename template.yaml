@@ -1,9 +1,9 @@
-AWSTemplateFormatVersion: "2010-09-09"
+﻿AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Phase 1 foundation for serverless merchant onboarding.
   Compute is Lambda-only. Table name, log level, and internal timeout
-  come from parameters / environment — nothing is hardcoded in code.
+  come from parameters / environment â€” nothing is hardcoded in code.
 
 Parameters:
   TableName:
@@ -73,7 +73,7 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-applications-create"
       CodeUri: src/
       Handler: handlers.applications_create.handler
-      Description: POST /applications — create METADATA + optional idempotency record
+      Description: POST /applications â€” create METADATA + optional idempotency record
       Events:
         CreateApplication:
           Type: Api
@@ -96,7 +96,7 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-applications-get"
       CodeUri: src/
       Handler: handlers.applications_get.handler
-      Description: GET /applications/{id} — GetItem METADATA only
+      Description: GET /applications/{id} â€” GetItem METADATA only
       Events:
         GetApplication:
           Type: Api
@@ -112,6 +112,30 @@ Resources:
                 - dynamodb:GetItem
               Resource: !GetAtt ApplicationsTable.Arn
 
+
+  UpdateApplicantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "`${AWS::StackName}-applicant-update"
+      CodeUri: src/
+      Handler: handlers.applicant_update.handler
+      Description: PATCH /applications/{id}/applicant - upsert one person record
+      Events:
+        UpdateApplicant:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/applicant
+            Method: PATCH
+      Policies:
+        - Statement:
+            - Sid: UpdateApplicantDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt ApplicationsTable.Arn
+
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
@@ -119,3 +143,4 @@ Outputs:
   TableName:
     Description: DynamoDB table name
     Value: !Ref ApplicationsTable
+
