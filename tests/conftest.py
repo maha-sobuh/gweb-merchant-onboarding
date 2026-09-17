@@ -50,3 +50,17 @@ def dynamodb_table(aws_credentials):
         )
         client.get_waiter("table_exists").wait(TableName=TABLE_NAME)
         yield boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
+
+
+DOCUMENTS_BUCKET_NAME = "test-documents-bucket"
+
+
+@pytest.fixture
+def documents_bucket(dynamodb_table, monkeypatch):
+    """S3 bucket for document tests. Depends on dynamodb_table so it reuses
+    the same active moto mock_aws() context rather than opening a second one.
+    """
+    monkeypatch.setenv("DOCUMENTS_BUCKET", DOCUMENTS_BUCKET_NAME)
+    client = boto3.client("s3", region_name=REGION)
+    client.create_bucket(Bucket=DOCUMENTS_BUCKET_NAME)
+    yield DOCUMENTS_BUCKET_NAME
