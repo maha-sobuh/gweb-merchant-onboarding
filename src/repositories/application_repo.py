@@ -1,4 +1,4 @@
-﻿"""Single-table DynamoDB access for Merchant Onboarding.
+"""Single-table DynamoDB access for Merchant Onboarding.
 
 WHY single-table:
 - One application is a cluster of related records that will grow:
@@ -51,6 +51,8 @@ from models.application import (
     utc_now_iso,
 )
 from models.applicant import Applicant, PersonRecord, person_pk, person_sk
+
+from models.business import Business, BusinessRecord, BUSINESS_SK, business_pk
 
 logger = logging.getLogger("merchant_onboarding.repo")
 
@@ -253,6 +255,74 @@ class ApplicationRepository:
                     "Person was modified concurrently; refetch and retry with the current version"
                 ) from exc
             logger.exception("DynamoDB error updating person")
+            raise
+        return record, False
+            # --- Phase 2: business record (singleton per application) --------------
+
+    def get_business(self, application_id: str) -> BusinessRecord | None:
+        response = self._table.get_item(
+            Key={"PK": business_pk(application_id), "SK": BUSINESS_SK},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return BusinessRecord.from_item(item)
+
+    def upsert_business(
+        self,
+        application_id: str,
+        data: Business,
+        expected_version: int | None,
+    ) -> tuple[BusinessRecord, bool]:
+        """Create or update the single business record for an application.
+
+        - expected_version is None -> create. Guarded by attribute_not_exists
+          so a second unversioned PATCH cannot silently overwrite an existing
+          business record.
+        - expected_version is provided -> optimistic-concurrency update,
+          same pattern as upsert_person.
+
+        Returns (record, created).
+        """
+        now = utc_now_iso()
+
+        if expected_version is None:
+            record = BusinessRecord.from_business(application_id, data, now, version=1)
+            try:
+                self._table.put_item(
+                    Item=record.to_item(),
+                    ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+                )
+            except ClientError as exc:
+                if _is_conditional_check_failed(exc):
+                    raise ConflictError(
+                        "A business record already exists for this application; "
+                        "supply expected_version to update it"
+                    ) from exc
+                logger.exception("DynamoDB error creating business record")
+                raise
+            return record, True
+
+        existing = self.get_business(application_id)
+        if existing is None:
+            raise NotFoundError("No business record exists yet for this application")
+
+        record = BusinessRecord.from_business(
+            application_id, data, existing.created_at, version=expected_version + 1
+        )
+        try:
+            self._table.put_item(
+                Item=record.to_item(),
+                ConditionExpression="attribute_exists(PK) AND version = :expected",
+                ExpressionAttributeValues={":expected": expected_version},
+            )
+        except ClientError as exc:
+            if _is_conditional_check_failed(exc):
+                raise ConflictError(
+                    "Business record was modified concurrently; refetch and retry with the current version"
+                ) from exc
+            logger.exception("DynamoDB error updating business record")
             raise
         return record, False
 
