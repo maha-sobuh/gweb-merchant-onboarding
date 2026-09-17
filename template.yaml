@@ -31,6 +31,7 @@ Globals:
       Variables:
         TABLE_NAME: !Ref ApplicationsTable
         LOG_LEVEL: !Ref LogLevel
+        DOCUMENTS_BUCKET: !Ref DocumentsBucket
         INTERNAL_TIMEOUT_SECONDS: !Ref InternalTimeoutSeconds
     Tracing: Active
 
@@ -66,6 +67,34 @@ Resources:
           Value: MerchantOnboarding
         - Key: Phase
           Value: "1"
+
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: ["*"]
+            AllowedHeaders: ["*"]
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
 
   CreateApplicationFunction:
     Type: AWS::Serverless::Function
@@ -158,6 +187,34 @@ Resources:
                 - dynamodb:PutItem
               Resource: !GetAtt ApplicationsTable.Arn
 
+  PresignDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-documents-presign"
+      CodeUri: src/
+      Handler: handlers.documents_presign.handler
+      Description: POST /applications/{id}/documents/presign - restricted S3 upload URL
+      Events:
+        PresignDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/documents/presign
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: PresignDocumentDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt ApplicationsTable.Arn
+            - Sid: PresignDocumentS3
+              Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Sub "${DocumentsBucket.Arn}/applications/*"
+
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
@@ -165,3 +222,6 @@ Outputs:
   TableName:
     Description: DynamoDB table name
     Value: !Ref ApplicationsTable
+  DocumentsBucketName:
+    Description: S3 bucket for uploaded documents
+    Value: !Ref DocumentsBucket
