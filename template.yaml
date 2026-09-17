@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Phase 1 foundation for serverless merchant onboarding.
+  Compute is Lambda-only. Table name, log level, and internal timeout
+  come from parameters / environment — nothing is hardcoded in code.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: MerchantOnboarding
+    Description: DynamoDB single-table name
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues: [DEBUG, INFO, WARNING, ERROR]
+  InternalTimeoutSeconds:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 26
+    Description: Handler DeadlineGuard budget; must stay below Lambda Timeout (28s), which itself stays below API Gateway REST API's fixed 29s integration timeout.
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [x86_64]
+    Timeout: 28
+    MemorySize: 256
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref ApplicationsTable
+        LOG_LEVEL: !Ref LogLevel
+        INTERNAL_TIMEOUT_SECONDS: !Ref InternalTimeoutSeconds
+    Tracing: Active
+
+Resources:
+  MerchantOnboardingApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Idempotency-Key'"
+        AllowOrigin: "'*'"
+
+  ApplicationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: MerchantOnboarding
+        - Key: Phase
+          Value: "1"
+
+  CreateApplicationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-applications-create"
+      CodeUri: src/
+      Handler: handlers.applications_create.handler
+      Description: POST /applications — create METADATA + optional idempotency record
+      Events:
+        CreateApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: CreateApplicationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+              Resource: !GetAtt ApplicationsTable.Arn
+
+  GetApplicationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-applications-get"
+      CodeUri: src/
+      Handler: handlers.applications_get.handler
+      Description: GET /applications/{id} — GetItem METADATA only
+      Events:
+        GetApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}
+            Method: GET
+      Policies:
+        - Statement:
+            - Sid: GetApplicationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !GetAtt ApplicationsTable.Arn
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway base URL
+    Value: !Sub "https://${MerchantOnboardingApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref ApplicationsTable
