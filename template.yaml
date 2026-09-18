@@ -215,6 +215,34 @@ Resources:
                 - s3:PutObject
               Resource: !Sub "${DocumentsBucket.Arn}/applications/*"
 
+  CompleteDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-documents-complete"
+      CodeUri: src/
+      Handler: handlers.documents_complete.handler
+      Description: POST /applications/{id}/documents/{documentId}/complete - confirm S3 upload
+      Events:
+        CompleteDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/documents/{documentId}/complete
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: CompleteDocumentDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ApplicationsTable.Arn
+            - Sid: CompleteDocumentS3
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "${DocumentsBucket.Arn}/applications/*"
+
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
