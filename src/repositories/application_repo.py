@@ -56,6 +56,8 @@ from models.business import Business, BusinessRecord, BUSINESS_SK, business_pk
 
 from models.document import DocumentRecord, DocumentStatus, DocumentType, document_pk, document_sk
 
+from models.mcc import ClassificationRecord, CLASSIFICATION_SK, classification_pk
+
 logger = logging.getLogger("merchant_onboarding.repo")
 
 IDEMPOTENCY_SK = "CREATE_APPLICATION"
@@ -432,6 +434,36 @@ class ApplicationRepository:
             raise
 
         return self.get_document(application_id, document_id)  # re-read for the updated item
+
+    # --- Phase 4a: MCC classification record (singleton per application) ---
+
+    def get_classification(self, application_id: str) -> ClassificationRecord | None:
+        response = self._table.get_item(
+            Key={"PK": classification_pk(application_id), "SK": CLASSIFICATION_SK},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return ClassificationRecord.from_item(item)
+
+    def upsert_classification(self, record: ClassificationRecord) -> ClassificationRecord:
+        """Create or overwrite the single classification record for an
+        application. Unlike person/business, this is intentionally NOT
+        version-guarded: every /classify call (whether it's a fresh
+        suggestion or a confirm/correct) is meant to simply record the
+        latest state, and the spec asks us to persist both the applicant's
+        selection and the system's proposal every time, not to protect
+        against concurrent editors the way person/business records do.
+        """
+        existing = self.get_classification(application_id=record.application_id)
+        now = utc_now_iso()
+        record.version = (existing.version + 1) if existing else 1
+        record.created_at = existing.created_at if existing else now
+        record.updated_at = now
+
+        self._table.put_item(Item=record.to_item())
+        return record
 
 
 def _is_conditional_check_failed(exc: ClientError) -> bool:

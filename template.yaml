@@ -243,6 +243,45 @@ Resources:
                 - s3:GetObject
               Resource: !Sub "${DocumentsBucket.Arn}/applications/*"
 
+  SearchMccFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-mcc-search"
+      CodeUri: src/
+      Handler: handlers.mcc_search.handler
+      Description: GET /mcc?query=... - search the static MCC catalog
+      Events:
+        SearchMcc:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /mcc
+            Method: GET
+      Policies: []
+
+  ClassifyApplicationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-classify"
+      CodeUri: src/
+      Handler: handlers.classify.handler
+      Description: POST /applications/{id}/classify - MCC suggestion/confirmation
+      Events:
+        ClassifyApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/classify
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: ClassifyApplicationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !GetAtt ApplicationsTable.Arn
+
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
