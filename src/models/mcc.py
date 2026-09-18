@@ -2,12 +2,13 @@
 
 Deliberately split from risk policy: MccEntry/ProposedMcc describe WHAT a
 business is (the taxonomy); RiskTier/risk reasoning describe WHAT GWEB does
-about it (policy). See src/data/risk_policy.json — risk rules can change
-without touching the MCC catalog, per spec §5.
+about it (policy). See src/data/risk_policy.json â€” risk rules can change
+without touching the MCC catalog, per spec آ§5.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,15 +49,15 @@ class ProposedMcc(BaseModel):
 class ClassifyRequest(BaseModel):
     """Body for POST /applications/{id}/classify.
 
-    Two uses of the same endpoint (spec §5 user journey: applicant
+    Two uses of the same endpoint (spec آ§5 user journey: applicant
     self-selects, system proposes, applicant confirms or corrects):
     - confirmed_mcc omitted -> "give me suggestions" (also persisted as
-      the latest proposal, for audit — spec: "Persist both
+      the latest proposal, for audit â€” spec: "Persist both
       applicant-selected activity and system-proposed MCC").
     - confirmed_mcc provided -> "the applicant is confirming/correcting
       to this code" (must be a real catalog code; ambiguous/sensitive
       tiers are still flagged for manual review regardless of confirmation
-      — spec: "Never auto-approve a merchant solely because an AI model
+      â€” spec: "Never auto-approve a merchant solely because an AI model
       labels it low risk").
     """
 
@@ -108,7 +109,10 @@ class ClassificationRecord(BaseModel):
             "updated_at": self.updated_at,
             "selected_industry": self.selected_industry,
             "business_description": self.business_description,
-            "proposed_mccs": [p.model_dump() for p in self.proposed_mccs],
+            "proposed_mccs": [
+                {**p.model_dump(), "confidence": Decimal(str(p.confidence))}
+                for p in self.proposed_mccs
+            ],
             "manual_review_required": self.manual_review_required,
             **({"confirmed_mcc": self.confirmed_mcc} if self.confirmed_mcc else {}),
         }

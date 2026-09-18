@@ -1,0 +1,17 @@
+{
+  "_comment": "Risk is policy, kept separate from the MCC taxonomy (spec section 5) so rules can change without touching mcc_catalog.json. Any code not listed here defaults to STANDARD. Tiers are GWEB's own risk language, not a claim that an MCC is universally high-risk.",
+  "base_policy": {
+    "6012": {"tier": "ENHANCED_REVIEW", "reason": "Financial institution merchandise/services - Mastercard flags for specialized handling"},
+    "6051": {"tier": "ENHANCED_REVIEW", "reason": "Quasi-cash (currency exchange, money orders, crypto) - elevated fraud/AML exposure"},
+    "6211": {"tier": "ENHANCED_REVIEW", "reason": "Securities brokers/dealers - regulated financial product, issuer scrutiny"},
+    "6300": {"tier": "ENHANCED_REVIEW", "reason": "Insurance sales/underwriting - regulated product, licensing verification needed"},
+    "5933": {"tier": "ENHANCED_REVIEW", "reason": "Pawn shops - elevated AML/stolen-goods exposure"},
+    "7995": {"tier": "RESTRICTED", "reason": "Betting/gambling - unsupported by many acquirers without specific licensing"}
+  },
+  "provider_overrides": {
+    "_comment": "Example only: acquirers/processors can apply stricter policy to the same MCC than GWEB's base policy (spec section 5). acme_processor here does not support pawn shops at all, even though GWEB's base policy only requires enhanced review.",
+    "acme_processor": {
+      "5933": {"tier": "RESTRICTED", "reason": "acme_processor does not underwrite pawn/salvage merchants"}
+    }
+  }
+}
