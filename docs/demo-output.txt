@@ -1,0 +1,364 @@
+﻿
+========================================================================
+1. Create the application  (POST /applications)
+========================================================================
+OK create -> HTTP 201
+    {
+      "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+      "status": "IN_PROGRESS",
+      "version": 1,
+      "createdAt": "2026-09-19T12:49:34Z",
+      "updatedAt": "2026-09-19T12:49:34Z"
+    }
+
+========================================================================
+2. Try to submit too early  (POST /applications/{id}/submit)
+========================================================================
+OK submit (empty application) -> HTTP 400
+    {
+      "error": {
+        "code": "SUBMISSION_INCOMPLETE",
+        "message": "Application is missing required items for submission"
+      },
+      "missingItems": [
+        "business information not provided (PATCH /applications/{id}/business)",
+        "at least one control person (PATCH /applications/{id}/applicant with is_control_person=true)",
+        "confirmed MCC (POST /applications/{id}/classify with confirmed_mcc)",
+        "document GOVERNMENT_ID (status RECEIVED)",
+        "document BUSINESS_REGISTRATION (status RECEIVED)",
+        "document BANK_EVIDENCE (status RECEIVED)"
+      ]
+    }
+
+========================================================================
+3. Add the control person  (PATCH /applications/{id}/applicant)
+========================================================================
+OK applicant -> HTTP 201
+    {
+      "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+      "personId": "95956615-be19-47f5-8ee2-0752fa32ae8d",
+      "version": 1,
+      "createdAt": "2026-09-19T12:49:34Z",
+      "updatedAt": "2026-09-19T12:49:34Z",
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "isControlPerson": true,
+      "isBeneficialOwner": false
+    }
+
+========================================================================
+4. Add the business  (PATCH /applications/{id}/business)
+========================================================================
+OK business -> HTTP 201
+    {
+      "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+      "version": 1,
+      "createdAt": "2026-09-19T12:49:34Z",
+      "updatedAt": "2026-09-19T12:49:34Z",
+      "legalName": "Acme Test LLC",
+      "entityStructure": "LLC",
+      "taxIdLastFour": "4321",
+      "taxIdType": "EIN",
+      "formationDate": "2020-01-15",
+      "formationState": "CA",
+      "formationCountry": "US",
+      "website": "https://acme-test.example",
+      "email": "billing@acme-test.example",
+      "industryDescription": "Restaurants",
+      "physicalAddress": {
+        "line1": "1 Test Street",
+        "city": "Testville",
+        "state": "CA",
+        "postal_code": "90001",
+        "country": "US"
+      },
+      "businessDescription": "Restaurant serving lunch and dinner to walk-in customers",
+      "annualProcessingVolume": 60000000,
+      "averageTransactionAmount": 4500
+    }
+
+========================================================================
+5. Documents: presign -> direct upload to S3 -> complete
+========================================================================
+OK presign GOVERNMENT_ID -> HTTP 201
+    {
+      "documentId": "cabc6dfd-e86a-4c24-a49f-04171fab53f4",
+      "status": "REQUESTED",
+      "uploadMethod": "PUT",
+      "expiresInSeconds": 900,
+      "uploadUrl": "https://demo-documents-bucket.s3.amazonaws.com/applications/..."
+    }
+    (client PUTs 20 bytes straight to S3; Lambda never sees the file)
+OK complete GOVERNMENT_ID -> HTTP 200
+    {
+      "documentId": "cabc6dfd-e86a-4c24-a49f-04171fab53f4",
+      "status": "RECEIVED",
+      "actualSizeBytes": 20
+    }
+OK presign BUSINESS_REGISTRATION -> HTTP 201
+    {
+      "documentId": "ab6a7f67-975b-4e1b-85e9-73ec575a1736",
+      "status": "REQUESTED",
+      "uploadMethod": "PUT",
+      "expiresInSeconds": 900,
+      "uploadUrl": "https://demo-documents-bucket.s3.amazonaws.com/applications/..."
+    }
+    (client PUTs 30 bytes straight to S3; Lambda never sees the file)
+OK complete BUSINESS_REGISTRATION -> HTTP 200
+    {
+      "documentId": "ab6a7f67-975b-4e1b-85e9-73ec575a1736",
+      "status": "RECEIVED",
+      "actualSizeBytes": 30
+    }
+OK presign BANK_EVIDENCE -> HTTP 201
+    {
+      "documentId": "54f004e0-1786-4cdd-9077-a8655b5d5239",
+      "status": "REQUESTED",
+      "uploadMethod": "PUT",
+      "expiresInSeconds": 900,
+      "uploadUrl": "https://demo-documents-bucket.s3.amazonaws.com/applications/..."
+    }
+    (client PUTs 30 bytes straight to S3; Lambda never sees the file)
+OK complete BANK_EVIDENCE -> HTTP 200
+    {
+      "documentId": "54f004e0-1786-4cdd-9077-a8655b5d5239",
+      "status": "RECEIVED",
+      "actualSizeBytes": 30
+    }
+
+========================================================================
+6. Classify: propose MCC(s), then the applicant confirms  (POST .../classify)
+========================================================================
+OK suggest -> HTTP 200
+    {
+      "proposedMccs": [
+        {
+          "code": "5812",
+          "description": "Eating Places and Restaurants",
+          "confidence": 1.0,
+          "riskTier": "STANDARD"
+        }
+      ],
+      "confirmedMcc": null,
+      "manualReviewRequired": false
+    }
+OK confirm 5812 -> HTTP 200
+    {
+      "proposedMccs": [
+        {
+          "code": "5812",
+          "description": "Eating Places and Restaurants",
+          "confidence": 1.0,
+          "riskTier": "STANDARD"
+        }
+      ],
+      "confirmedMcc": "5812",
+      "manualReviewRequired": false
+    }
+
+========================================================================
+7. Evaluate: deterministic rate math + AI commentary + risk signals  (POST .../evaluate)
+========================================================================
+OK evaluate -> HTTP 200
+    {
+      "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+      "version": 1,
+      "createdAt": "2026-09-19T12:49:34Z",
+      "updatedAt": "2026-09-19T12:49:34Z",
+      "businessProfile": {
+        "sales_channel": "primarily in-person / card-present",
+        "fulfillment_model": "unspecified \u2014 not enough signal in the description",
+        "recurring_behavior": "one-time/transactional, no recurring billing indicated",
+        "customer_type": "unspecified \u2014 not enough signal in the description",
+        "summary_text": "Business self-describes as operating in 'Restaurants'. Sales channel appears to be primarily in-person / card-present; fulfillment looks unspecified \u2014 not enough signal in the description; billing pattern looks one-time/transactional, no recurring billing indicated; customer base appears unspecified \u2014 not enough signal in the description. This summary is generated by keyword heuristics (mock adapter), not a real language model.",
+        "ai_confidence": 0.4,
+        "ai_available": true
+      },
+      "statementAnalysis": {
+        "extraction": {
+          "processor": "Test Processor Inc",
+          "statement_period": "2026-08",
+          "monthly_volume_cents": 5000000,
+          "monthly_transaction_count": 1000,
+          "discount_rate_percent": 2.5,
+          "per_transaction_fee_cents": 10,
+          "monthly_fee_cents": 2500,
+          "source": "client_provided",
+          "extraction_confidence": 1.0
+        },
+        "effective_rate_percent": 2.75,
+        "calculation_note": "effective_rate_percent = (monthly_fee_cents + monthly_transaction_count * per_transaction_fee_cents + monthly_volume_cents * discount_rate_percent / 100) / monthly_volume_cents * 100"
+      },
+      "riskSignals": []
+    }
+
+========================================================================
+8. Submit: lock the application and produce the review payload  (POST .../submit)
+========================================================================
+OK submit -> HTTP 200
+    {
+      "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+      "status": "SUBMITTED",
+      "submittedAt": "2026-09-19T12:49:34Z",
+      "snapshot": {
+        "application": {
+          "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+          "status": "SUBMITTED",
+          "createdAt": "2026-09-19T12:49:34Z"
+        },
+        "business": {
+          "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+          "version": 1,
+          "createdAt": "2026-09-19T12:49:34Z",
+          "updatedAt": "2026-09-19T12:49:34Z",
+          "legalName": "Acme Test LLC",
+          "entityStructure": "LLC",
+          "taxIdLastFour": "4321",
+          "taxIdType": "EIN",
+          "formationDate": "2020-01-15",
+          "formationState": "CA",
+          "formationCountry": "US",
+          "website": "https://acme-test.example",
+          "email": "billing@acme-test.example",
+          "industryDescription": "Restaurants",
+          "physicalAddress": {
+            "line1": "1 Test Street",
+            "city": "Testville",
+            "state": "CA",
+            "postal_code": "90001",
+            "country": "US"
+          },
+          "businessDescription": "Restaurant serving lunch and dinner to walk-in customers",
+          "annualProcessingVolume": 60000000,
+          "averageTransactionAmount": 4500
+        },
+        "persons": [
+          {
+            "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+            "personId": "95956615-be19-47f5-8ee2-0752fa32ae8d",
+            "version": 1,
+            "createdAt": "2026-09-19T12:49:34Z",
+            "updatedAt": "2026-09-19T12:49:34Z",
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "isControlPerson": true,
+            "isBeneficialOwner": false
+          }
+        ],
+        "documents": [
+          {
+            "documentId": "54f004e0-1786-4cdd-9077-a8655b5d5239",
+            "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+            "documentType": "BANK_EVIDENCE",
+            "status": "RECEIVED",
+            "contentType": "application/pdf",
+            "originalFilename": "voided-check.pdf",
+            "declaredSizeBytes": 30,
+            "actualSizeBytes": 30,
+            "version": 2,
+            "createdAt": "2026-09-19T12:49:34Z",
+            "updatedAt": "2026-09-19T12:49:34Z"
+          },
+          {
+            "documentId": "ab6a7f67-975b-4e1b-85e9-73ec575a1736",
+            "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+            "documentType": "BUSINESS_REGISTRATION",
+            "status": "RECEIVED",
+            "contentType": "application/pdf",
+            "originalFilename": "registration.pdf",
+            "declaredSizeBytes": 30,
+            "actualSizeBytes": 30,
+            "version": 2,
+            "createdAt": "2026-09-19T12:49:34Z",
+            "updatedAt": "2026-09-19T12:49:34Z"
+          },
+          {
+            "documentId": "cabc6dfd-e86a-4c24-a49f-04171fab53f4",
+            "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+            "documentType": "GOVERNMENT_ID",
+            "status": "RECEIVED",
+            "contentType": "image/png",
+            "originalFilename": "id-front.png",
+            "declaredSizeBytes": 20,
+            "actualSizeBytes": 20,
+            "version": 2,
+            "createdAt": "2026-09-19T12:49:34Z",
+            "updatedAt": "2026-09-19T12:49:34Z"
+          }
+        ],
+        "classification": {
+          "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+          "version": 2,
+          "createdAt": "2026-09-19T12:49:34Z",
+          "updatedAt": "2026-09-19T12:49:34Z",
+          "selectedIndustry": "Restaurants",
+          "businessDescription": "Restaurant serving lunch and dinner to walk-in customers",
+          "proposedMccs": [
+            {
+              "code": "5812",
+              "description": "Eating Places and Restaurants",
+              "confidence": 1.0,
+              "reason": "Matched keywords: restaurant",
+              "riskTier": "STANDARD",
+              "riskReason": null
+            }
+          ],
+          "confirmedMcc": "5812",
+          "manualReviewRequired": false
+        },
+        "evaluation": {
+          "applicationId": "b981ffa1-a1b8-41da-8565-55b1898342ce",
+          "version": 1,
+          "createdAt": "2026-09-19T12:49:34Z",
+          "updatedAt": "2026-09-19T12:49:34Z",
+          "businessProfile": {
+            "sales_channel": "primarily in-person / card-present",
+            "fulfillment_model": "unspecified \u2014 not enough signal in the description",
+            "recurring_behavior": "one-time/transactional, no recurring billing indicated",
+            "customer_type": "unspecified \u2014 not enough signal in the description",
+            "summary_text": "Business self-describes as operating in 'Restaurants'. Sales channel appears to be primarily in-person / card-present; fulfillment looks unspecified \u2014 not enough signal in the description; billing pattern looks one-time/transactional, no recurring billing indicated; customer base appears unspecified \u2014 not enough signal in the description. This summary is generated by keyword heuristics (mock adapter), not a real language model.",
+            "ai_confidence": 0.4,
+            "ai_available": true
+          },
+          "statementAnalysis": {
+            "extraction": {
+              "processor": "Test Processor Inc",
+              "statement_period": "2026-08",
+              "monthly_volume_cents": 5000000,
+              "monthly_transaction_count": 1000,
+              "discount_rate_percent": 2.5,
+              "per_transaction_fee_cents": 10,
+              "monthly_fee_cents": 2500,
+              "source": "client_provided",
+              "extraction_confidence": 1.0
+            },
+            "effective_rate_percent": 2.75,
+            "calculation_note": "effective_rate_percent = (monthly_fee_cents + monthly_transaction_count * per_transaction_fee_cents + monthly_volume_cents * discount_rate_percent / 100) / monthly_volume_cents * 100"
+          },
+          "riskSignals": []
+        }
+      }
+    }
+
+========================================================================
+9. Submit again: the application is locked  (expect 409)
+========================================================================
+OK submit (second call) -> HTTP 409
+    {
+      "error": {
+        "code": "CONFLICT",
+        "message": "Application is not in IN_PROGRESS state; it may already be submitted"
+      }
+    }
+
+========================================================================
+10. Slow dependency: the AI provider hangs, the request still returns in time
+========================================================================
+    internal deadline for this demo: 3 seconds (production default: 20; API Gateway hard cap: 29)
+    elapsed: 2.01s  (HTTP 200)
+    ai_available: False  (safe fallback)
+    effective_rate_percent: 2.75  (deterministic, unaffected by the AI outage)
+
+========================================================================
+Demo complete
+========================================================================
