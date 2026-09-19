@@ -63,6 +63,9 @@ from models.evaluation import EvaluationRecord, EVALUATION_SK, evaluation_pk
 from models.applicant import PERSON_SK_PREFIX
 from models.document import DOC_SK_PREFIX
 
+from models.submission import SubmissionRecord, SUBMISSION_SK, submission_pk
+from common.dynamo_utils import to_dynamo_safe
+
 logger = logging.getLogger("merchant_onboarding.repo")
 
 IDEMPOTENCY_SK = "CREATE_APPLICATION"
@@ -515,7 +518,51 @@ class ApplicationRepository:
 
         self._table.put_item(Item=record.to_item())
         return record
+    # --- Phase 5: submission (locks the application, stores the snapshot) --
 
+    def submit_application(
+        self, application_id: str, snapshot: dict
+    ) -> tuple[ApplicationMetadata, SubmissionRecord]:
+        """Transition IN_PROGRESS -> SUBMITTED, guarded by the same
+        state-machine ConditionExpression pattern as document REQUESTED ->
+        RECEIVED (see mark_document_received). A second submit attempt on
+        an already-SUBMITTED application is a 409, not a silent no-op or
+        a second write.
+        """
+        now = utc_now_iso()
+        try:
+            self._table.update_item(
+                Key={"PK": application_pk(application_id), "SK": METADATA_SK},
+                UpdateExpression=(
+                    "SET #status = :submitted, updated_at = :now, version = version + :one"
+                ),
+                ConditionExpression="#status = :in_progress",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":submitted": ApplicationStatus.SUBMITTED.value,
+                    ":in_progress": ApplicationStatus.IN_PROGRESS.value,
+                    ":now": now,
+                    ":one": 1,
+                },
+            )
+        except ClientError as exc:
+            if _is_conditional_check_failed(exc):
+                raise ConflictError(
+                    "Application is not in IN_PROGRESS state; it may already be submitted"
+                ) from exc
+            logger.exception("DynamoDB error submitting application")
+            raise
+
+        submission = SubmissionRecord(
+            PK=submission_pk(application_id),
+            application_id=application_id,
+            submitted_at=now,
+            snapshot=to_dynamo_safe(snapshot),
+        )
+        self._table.put_item(Item=submission.to_item())
+
+        updated_metadata = self.get_metadata(application_id)
+        return updated_metadata, submission
 
 def _is_conditional_check_failed(exc: ClientError) -> bool:
     return exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"

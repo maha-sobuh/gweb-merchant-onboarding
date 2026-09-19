@@ -327,7 +327,31 @@ Resources:
               Action:
                 - dynamodb:GetItem
               Resource: !GetAtt ApplicationsTable.Arn
-
+  SubmitApplicationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-submit"
+      CodeUri: src/
+      Handler: handlers.submit.handler
+      Description: POST /applications/{id}/submit - validate, lock, and produce the internal review payload
+      Events:
+        SubmitApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/submit
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: SubmitApplicationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:Query
+              Resource: !GetAtt ApplicationsTable.Arn
+              
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
