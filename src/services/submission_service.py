@@ -76,7 +76,7 @@ def build_submission_snapshot(
     return {
         "application": {
             "applicationId": metadata.application_id,
-            "status": metadata.status.value,
+            "status": "SUBMITTED",  # the snapshot is the frozen state at submission
             "createdAt": metadata.created_at,
         },
         "business": business.to_public_dict() if business else None,

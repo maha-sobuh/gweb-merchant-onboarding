@@ -146,7 +146,7 @@ def test_snapshot_bundles_all_entities():
     )
     assert snapshot["application"] == {
         "applicationId": "app-1",
-        "status": "IN_PROGRESS",
+        "status": "SUBMITTED",
         "createdAt": "2026-09-01T00:00:00Z",
     }
     assert snapshot["business"] == {"legalName": "Acme"}
