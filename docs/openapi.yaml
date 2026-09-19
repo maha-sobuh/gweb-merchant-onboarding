@@ -1,0 +1,1055 @@
+openapi: 3.0.3
+info:
+  title: Merchant Onboarding & Underwriting Intake API
+  version: 1.0.0
+  description: |
+    Serverless intake API for merchant onboarding: application state, applicant and
+    business data, document upload through presigned S3 URLs, MCC classification,
+    explainable evaluation, and a final submit step that produces a normalized
+    review payload.
+
+    Notes:
+    - This is an intake and decision-support prototype. It does not perform identity
+      verification, credit decisions or sanctions screening, and it never auto-approves.
+    - The prototype has no authentication (see SECURITY.md).
+    - Errors always use the envelope `{"error": {"code": "...", "message": "..."}}`.
+    - Nested objects inside the evaluation payload use snake_case keys; everything
+      else uses camelCase. This inconsistency is a documented known gap.
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local (sam local start-api)
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    description: Deployed stack
+    variables:
+      apiId:
+        default: abc123
+      region:
+        default: us-east-1
+      stage:
+        default: Prod
+security: []
+tags:
+  - name: Applications
+  - name: Applicant and business
+  - name: Documents
+  - name: Classification
+  - name: Evaluation
+  - name: Submission
+
+paths:
+  /applications:
+    post:
+      tags: [Applications]
+      summary: Create an application
+      description: |
+        Creates an application in status `IN_PROGRESS`. Send an `Idempotency-Key` header
+        to make retries safe: replaying the same key returns the original application
+        instead of creating a duplicate.
+      operationId: createApplication
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '201':
+          description: Application created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '200':
+          description: Idempotent replay of an earlier create with the same key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}:
+    get:
+      tags: [Applications]
+      summary: Retrieve application metadata
+      operationId: getApplication
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Application metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/applicant:
+    patch:
+      tags: [Applicant and business]
+      summary: Create or update a person (owner or control person)
+      description: |
+        Omit `person_id` to create a new person (201). To update an existing person,
+        send `person_id` together with `expected_version` (optimistic concurrency, 200).
+        Raw `tax_id` and `government_id_number` are accepted but only their last four
+        characters are stored and returned.
+      operationId: upsertApplicant
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonRequest'
+      responses:
+        '201':
+          description: Person created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '200':
+          description: Person updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/business:
+    patch:
+      tags: [Applicant and business]
+      summary: Create or update the business (singleton per application)
+      description: |
+        The first call creates the business (201). Later calls must include
+        `expected_version` (200). The raw `tax_id` is accepted but only its last four
+        characters are stored and returned.
+      operationId: upsertBusiness
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessRequest'
+      responses:
+        '201':
+          description: Business created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        '200':
+          description: Business updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/documents/presign:
+    post:
+      tags: [Documents]
+      summary: Create a presigned S3 upload URL
+      description: |
+        Registers a document in status `REQUESTED` and returns a presigned PUT URL
+        (valid 15 minutes). Upload the file directly to that URL with the required
+        `Content-Type` header, then call the complete endpoint. Document bytes never
+        pass through Lambda.
+      operationId: presignDocument
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignRequest'
+      responses:
+        '201':
+          description: Document registered and upload URL issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/documents/{documentId}/complete:
+    post:
+      tags: [Documents]
+      summary: Confirm an upload
+      description: |
+        Confirms that the object exists in S3 and moves the document from `REQUESTED`
+        to `RECEIVED`. Returns 400 if nothing was uploaded yet. The checksum is
+        client-reported and is not recomputed server-side.
+      operationId: completeDocument
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteRequest'
+      responses:
+        '200':
+          description: Document received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /mcc:
+    get:
+      tags: [Classification]
+      summary: Search the MCC catalog
+      operationId: searchMcc
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Free-text search over code, description and keywords
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching catalog entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MccSearchResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/classify:
+    post:
+      tags: [Classification]
+      summary: Propose, confirm or correct the MCC
+      description: |
+        Without `confirmed_mcc` the response contains suggested MCCs with confidence,
+        reason and risk tier. With `confirmed_mcc` the applicant confirms or corrects
+        the choice. The applicant's selection and the system proposals are both
+        persisted. `manualReviewRequired` is computed independently of what the
+        applicant confirms, and nothing is auto-approved.
+      operationId: classifyApplication
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassifyRequest'
+      responses:
+        '200':
+          description: Classification record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Classification'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/evaluate:
+    post:
+      tags: [Evaluation]
+      summary: Run the business and rate evaluation
+      description: |
+        Produces an AI-assisted business summary, an effective-rate calculation when
+        statement values are supplied, and explainable risk signals. The rate is plain
+        arithmetic and never comes from the AI. If the AI provider is slow or fails,
+        the response is still 200 with `businessProfile.ai_available = false`.
+      operationId: evaluateApplication
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateRequest'
+      responses:
+        '200':
+          description: Evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Evaluation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/evaluation:
+    get:
+      tags: [Evaluation]
+      summary: Retrieve the most recent evaluation
+      operationId: getEvaluation
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Stored evaluation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Evaluation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /applications/{id}/submit:
+    post:
+      tags: [Submission]
+      summary: Validate, lock and submit
+      description: |
+        Blocks with 400 and an explicit `missingItems` list when required items are
+        absent. Required: business name, entity structure, tax ID, physical address and
+        description; at least one control person; a confirmed MCC; and documents of type
+        `GOVERNMENT_ID`, `BUSINESS_REGISTRATION` and `BANK_EVIDENCE` in status
+        `RECEIVED`. On success the application moves `IN_PROGRESS` to `SUBMITTED` exactly
+        once and a frozen review snapshot is stored. A second submit returns 409.
+      operationId: submitApplication
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Submitted; includes the normalized review payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitResponse'
+        '400':
+          description: Required items are missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionIncomplete'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    ApplicationId:
+      name: id
+      in: path
+      required: true
+      description: Application ID (UUID)
+      schema:
+        type: string
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      description: Document ID (UUID) returned by the presign endpoint
+      schema:
+        type: string
+
+  responses:
+    ValidationError:
+      description: Invalid request (`VALIDATION_ERROR`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found (`NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict, stale version, or illegal state transition (`CONFLICT`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Unexpected error or internal deadline exceeded (`INTERNAL_ERROR`, `INTERNAL_TIMEOUT`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+          required: [code, message]
+      required: [error]
+
+    SubmissionIncomplete:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: SUBMISSION_INCOMPLETE
+            message:
+              type: string
+          required: [code, message]
+        missingItems:
+          type: array
+          items:
+            type: string
+          example:
+            - business.legal_name
+            - document GOVERNMENT_ID (status RECEIVED)
+      required: [error, missingItems]
+
+    Address:
+      type: object
+      additionalProperties: false
+      properties:
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2
+
+    Application:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        status:
+          type: string
+          enum: [IN_PROGRESS, SUBMITTED]
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PersonRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        person_id:
+          type: string
+          description: Omit to create a new person
+        expected_version:
+          type: integer
+          description: Required when person_id refers to an existing person
+        first_name:
+          type: string
+        middle_name:
+          type: string
+        last_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        email:
+          type: string
+        phone:
+          type: string
+        tax_id:
+          type: string
+          description: SSN or ITIN. Only the last four characters are stored.
+        tax_id_type:
+          type: string
+        citizenship_country:
+          type: string
+          description: ISO 3166-1 alpha-2
+        title:
+          type: string
+          description: Corporate title, for example CEO
+        ownership_percentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        is_control_person:
+          type: boolean
+          default: false
+        is_beneficial_owner:
+          type: boolean
+          default: false
+        residential_address:
+          $ref: '#/components/schemas/Address'
+        government_id_type:
+          type: string
+        government_id_number:
+          type: string
+          description: Only the last four characters are stored.
+        government_id_country:
+          type: string
+        consent_accepted_at:
+          type: string
+          description: ISO-8601 timestamp of terms acceptance
+        consent_terms_version:
+          type: string
+
+    Person:
+      type: object
+      description: Stored person; identifiers are masked to their last four characters.
+      properties:
+        applicationId:
+          type: string
+        personId:
+          type: string
+        version:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        dateOfBirth:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        taxIdLastFour:
+          type: string
+        taxIdType:
+          type: string
+        citizenshipCountry:
+          type: string
+        title:
+          type: string
+        ownershipPercentage:
+          type: number
+        isControlPerson:
+          type: boolean
+        isBeneficialOwner:
+          type: boolean
+        residentialAddress:
+          $ref: '#/components/schemas/Address'
+        governmentIdType:
+          type: string
+        governmentIdLastFour:
+          type: string
+        governmentIdCountry:
+          type: string
+        consentAcceptedAt:
+          type: string
+        consentTermsVersion:
+          type: string
+
+    BusinessRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version:
+          type: integer
+          description: Required when updating an existing business record
+        legal_name:
+          type: string
+        dba_name:
+          type: string
+        entity_structure:
+          type: string
+          enum: [SOLE_PROP, LLC, PARTNERSHIP, PRIVATE_CORP, PUBLIC_CORP, NON_PROFIT, GOVERNMENT, OTHER]
+        tax_id:
+          type: string
+          description: EIN or TIN. Only the last four characters are stored.
+        tax_id_type:
+          type: string
+          enum: [EIN, SSN, OTHER]
+        formation_date:
+          type: string
+          format: date
+        formation_state:
+          type: string
+        formation_country:
+          type: string
+          description: ISO 3166-1 alpha-2
+        website:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        industry_description:
+          type: string
+        naics_code:
+          type: string
+        mcc:
+          type: string
+        physical_address:
+          $ref: '#/components/schemas/Address'
+        mailing_address:
+          $ref: '#/components/schemas/Address'
+        business_description:
+          type: string
+        years_in_business:
+          type: integer
+          minimum: 0
+        annual_processing_volume:
+          type: integer
+          minimum: 0
+          description: Expected annual card volume in minor units
+        average_transaction_amount:
+          type: integer
+          minimum: 0
+          description: Average ticket in minor units
+
+    Business:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        version:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        legalName:
+          type: string
+        dbaName:
+          type: string
+        entityStructure:
+          type: string
+        taxIdLastFour:
+          type: string
+        taxIdType:
+          type: string
+        formationDate:
+          type: string
+        formationState:
+          type: string
+        formationCountry:
+          type: string
+        website:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        industryDescription:
+          type: string
+        naicsCode:
+          type: string
+        mcc:
+          type: string
+        physicalAddress:
+          $ref: '#/components/schemas/Address'
+        mailingAddress:
+          $ref: '#/components/schemas/Address'
+        businessDescription:
+          type: string
+        yearsInBusiness:
+          type: integer
+        annualProcessingVolume:
+          type: integer
+        averageTransactionAmount:
+          type: integer
+
+    PresignRequest:
+      type: object
+      additionalProperties: false
+      required: [document_type, original_filename, content_type, declared_size_bytes]
+      properties:
+        document_type:
+          $ref: '#/components/schemas/DocumentType'
+        original_filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content_type:
+          type: string
+          enum: [application/pdf, image/jpeg, image/png]
+        declared_size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 26214400
+          description: Maximum 25 MB
+
+    PresignResponse:
+      allOf:
+        - $ref: '#/components/schemas/Document'
+        - type: object
+          properties:
+            uploadUrl:
+              type: string
+              description: Presigned URL, valid for `expiresInSeconds`
+            uploadMethod:
+              type: string
+              example: PUT
+            requiredHeaders:
+              type: object
+              additionalProperties:
+                type: string
+              example:
+                Content-Type: application/pdf
+            expiresInSeconds:
+              type: integer
+              example: 900
+
+    CompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [checksum_sha256]
+      properties:
+        checksum_sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: Client-computed SHA-256 hex digest of the uploaded file
+
+    DocumentType:
+      type: string
+      enum:
+        - GOVERNMENT_ID
+        - BUSINESS_REGISTRATION
+        - BUSINESS_LICENSE
+        - BANK_EVIDENCE
+        - PROCESSING_STATEMENT
+        - ADDITIONAL_EVIDENCE
+
+    Document:
+      type: object
+      description: The S3 key is never exposed.
+      properties:
+        documentId:
+          type: string
+        applicationId:
+          type: string
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
+        status:
+          type: string
+          enum: [REQUESTED, RECEIVED, PROCESSING, ACCEPTED, NEEDS_REVIEW, REJECTED]
+          description: Only REQUESTED and RECEIVED are used today.
+        contentType:
+          type: string
+        originalFilename:
+          type: string
+        declaredSizeBytes:
+          type: integer
+        actualSizeBytes:
+          type: integer
+          nullable: true
+        version:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    MccSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              description:
+                type: string
+              keywords:
+                type: array
+                items:
+                  type: string
+
+    ClassifyRequest:
+      type: object
+      additionalProperties: false
+      required: [selected_industry, business_description]
+      properties:
+        selected_industry:
+          type: string
+          minLength: 1
+          maxLength: 200
+        business_description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        confirmed_mcc:
+          type: string
+          minLength: 4
+          maxLength: 4
+          description: Must be a code in the catalog
+        provider:
+          type: string
+          description: Optional acquirer or processor name for policy overrides
+
+    ProposedMcc:
+      type: object
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
+        riskTier:
+          type: string
+          enum: [STANDARD, ENHANCED_REVIEW, RESTRICTED]
+        riskReason:
+          type: string
+          nullable: true
+
+    Classification:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        version:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        selectedIndustry:
+          type: string
+        businessDescription:
+          type: string
+        proposedMccs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedMcc'
+        confirmedMcc:
+          type: string
+          nullable: true
+        manualReviewRequired:
+          type: boolean
+
+    EvaluateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        processing_statement:
+          type: object
+          additionalProperties: false
+          required:
+            - processor
+            - statement_period
+            - monthly_volume_cents
+            - monthly_transaction_count
+            - discount_rate_percent
+            - per_transaction_fee_cents
+            - monthly_fee_cents
+          properties:
+            processor:
+              type: string
+            statement_period:
+              type: string
+              example: 2026-08
+            monthly_volume_cents:
+              type: integer
+              minimum: 1
+            monthly_transaction_count:
+              type: integer
+              minimum: 1
+            discount_rate_percent:
+              type: number
+              minimum: 0
+              maximum: 100
+            per_transaction_fee_cents:
+              type: integer
+              minimum: 0
+            monthly_fee_cents:
+              type: integer
+              minimum: 0
+
+    Evaluation:
+      type: object
+      description: Nested objects use snake_case keys.
+      properties:
+        applicationId:
+          type: string
+        version:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        businessProfile:
+          type: object
+          properties:
+            sales_channel:
+              type: string
+            fulfillment_model:
+              type: string
+            recurring_behavior:
+              type: string
+            customer_type:
+              type: string
+            summary_text:
+              type: string
+            ai_confidence:
+              type: number
+            ai_available:
+              type: boolean
+              description: false when the AI provider failed or timed out and a safe fallback was used
+        statementAnalysis:
+          type: object
+          nullable: true
+          properties:
+            extraction:
+              type: object
+              properties:
+                processor:
+                  type: string
+                  nullable: true
+                statement_period:
+                  type: string
+                  nullable: true
+                monthly_volume_cents:
+                  type: integer
+                  nullable: true
+                monthly_transaction_count:
+                  type: integer
+                  nullable: true
+                discount_rate_percent:
+                  type: number
+                  nullable: true
+                per_transaction_fee_cents:
+                  type: integer
+                  nullable: true
+                monthly_fee_cents:
+                  type: integer
+                  nullable: true
+                source:
+                  type: string
+                  enum: [client_provided, ai_mock_extraction]
+                extraction_confidence:
+                  type: number
+            effective_rate_percent:
+              type: number
+              nullable: true
+              description: Deterministic arithmetic, never AI-generated
+            calculation_note:
+              type: string
+        riskSignals:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+              source_fields:
+                type: array
+                items:
+                  type: string
+              severity:
+                type: string
+                enum: [INFO, WARNING]
+
+    SubmitResponse:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        status:
+          type: string
+          example: SUBMITTED
+        submittedAt:
+          type: string
+          format: date-time
+        snapshot:
+          type: object
+          description: Frozen normalized review payload
+          properties:
+            application:
+              $ref: '#/components/schemas/Application'
+            business:
+              $ref: '#/components/schemas/Business'
+            persons:
+              type: array
+              items:
+                $ref: '#/components/schemas/Person'
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+            classification:
+              $ref: '#/components/schemas/Classification'
+            evaluation:
+              $ref: '#/components/schemas/Evaluation'
