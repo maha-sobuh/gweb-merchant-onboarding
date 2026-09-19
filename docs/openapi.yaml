@@ -62,13 +62,7 @@ paths:
               additionalProperties: false
       responses:
         '201':
-          description: Application created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Application'
-        '200':
-          description: Idempotent replay of an earlier create with the same key
+          description: Application created, or the original application when the same Idempotency-Key is replayed
           content:
             application/json:
               schema:
