@@ -557,7 +557,7 @@ class ApplicationRepository:
             PK=submission_pk(application_id),
             application_id=application_id,
             submitted_at=now,
-            snapshot=to_dynamo_safe(snapshot),
+            snapshot=snapshot,
         )
         self._table.put_item(Item=submission.to_item())
 
