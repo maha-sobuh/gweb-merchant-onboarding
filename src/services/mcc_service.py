@@ -64,7 +64,8 @@ def risk_tier_for(code: str, provider: str | None = None) -> tuple[RiskTier, str
     "Support provider-specific overrides, because acquirers/processors can
     apply different underwriting policies to the same MCC")."""
     if provider:
-        override = _RISK_POLICY.get("provider_overrides", {}).get(provider, {}).get(code)
+        provider_rules = _RISK_POLICY.get("provider_overrides", {}).get(provider)
+        override = provider_rules.get(code) if isinstance(provider_rules, dict) else None
         if override:
             return RiskTier(override["tier"]), override["reason"]
 

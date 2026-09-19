@@ -91,3 +91,11 @@ def test_is_sensitive_true_for_enhanced_review_and_restricted():
     assert mcc_service.is_sensitive(RiskTier.ENHANCED_REVIEW) is True
     assert mcc_service.is_sensitive(RiskTier.RESTRICTED) is True
     assert mcc_service.is_sensitive(RiskTier.STANDARD) is False
+
+
+
+def test_provider_named_like_a_comment_key_does_not_crash():
+    from services import mcc_service
+
+    tier, _reason = mcc_service.risk_tier_for("5812", provider="_comment")
+    assert tier.value == "STANDARD"
