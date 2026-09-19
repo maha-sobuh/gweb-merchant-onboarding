@@ -58,6 +58,11 @@ from models.document import DocumentRecord, DocumentStatus, DocumentType, docume
 
 from models.mcc import ClassificationRecord, CLASSIFICATION_SK, classification_pk
 
+from boto3.dynamodb.conditions import Key
+from models.evaluation import EvaluationRecord, EVALUATION_SK, evaluation_pk
+from models.applicant import PERSON_SK_PREFIX
+from models.document import DOC_SK_PREFIX
+
 logger = logging.getLogger("merchant_onboarding.repo")
 
 IDEMPOTENCY_SK = "CREATE_APPLICATION"
@@ -457,6 +462,52 @@ class ApplicationRepository:
         against concurrent editors the way person/business records do.
         """
         existing = self.get_classification(application_id=record.application_id)
+        now = utc_now_iso()
+        record.version = (existing.version + 1) if existing else 1
+        record.created_at = existing.created_at if existing else now
+        record.updated_at = now
+
+        self._table.put_item(Item=record.to_item())
+        return record
+
+    # --- Phase 4b: list access patterns + evaluation record -----------------
+
+    def list_persons(self, application_id: str) -> list[PersonRecord]:
+        """Access pattern from spec §9: 'list people/owners'. Single Query
+        on PK, filtered server-side by SK prefix - no table scan."""
+        response = self._table.query(
+            KeyConditionExpression=(
+                Key("PK").eq(person_pk(application_id)) & Key("SK").begins_with(PERSON_SK_PREFIX)
+            )
+        )
+        return [PersonRecord.from_item(item) for item in response.get("Items", [])]
+
+    def list_documents(self, application_id: str) -> list[DocumentRecord]:
+        """Access pattern from spec §9: 'list documents'. Same Query shape
+        as list_persons, different SK prefix — this is exactly the payoff
+        of the single-table design described at the top of this file."""
+        response = self._table.query(
+            KeyConditionExpression=(
+                Key("PK").eq(document_pk(application_id)) & Key("SK").begins_with(DOC_SK_PREFIX)
+            )
+        )
+        return [DocumentRecord.from_item(item) for item in response.get("Items", [])]
+
+    def get_evaluation(self, application_id: str) -> EvaluationRecord | None:
+        """Access pattern from spec §9: 'fetch current evaluation'."""
+        response = self._table.get_item(
+            Key={"PK": evaluation_pk(application_id), "SK": EVALUATION_SK},
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return EvaluationRecord.from_item(item)
+
+    def upsert_evaluation(self, record: EvaluationRecord) -> EvaluationRecord:
+        """Not version-guarded, same reasoning as upsert_classification:
+        each /evaluate call simply records the latest result."""
+        existing = self.get_evaluation(record.application_id)
         now = utc_now_iso()
         record.version = (existing.version + 1) if existing else 1
         record.created_at = existing.created_at if existing else now

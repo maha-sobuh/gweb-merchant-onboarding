@@ -282,6 +282,52 @@ Resources:
                 - dynamodb:PutItem
               Resource: !GetAtt ApplicationsTable.Arn
 
+  EvaluateApplicationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-evaluate"
+      CodeUri: src/
+      Handler: handlers.evaluate.handler
+      Description: POST /applications/{id}/evaluate - business profile, rate analysis, risk signals
+      Events:
+        EvaluateApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/evaluate
+            Method: POST
+      Policies:
+        - Statement:
+            - Sid: EvaluateApplicationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+              Resource: !GetAtt ApplicationsTable.Arn
+
+  GetEvaluationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-evaluation-get"
+      CodeUri: src/
+      Handler: handlers.get_evaluation.handler
+      Description: GET /applications/{id}/evaluation - retrieve the latest evaluation result
+      Events:
+        GetEvaluation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MerchantOnboardingApi
+            Path: /applications/{id}/evaluation
+            Method: GET
+      Policies:
+        - Statement:
+            - Sid: GetEvaluationDynamoDB
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !GetAtt ApplicationsTable.Arn
+
 Outputs:
   ApiUrl:
     Description: API Gateway base URL
