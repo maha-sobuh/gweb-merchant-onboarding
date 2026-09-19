@@ -27,7 +27,8 @@ ENTITY_TYPE_IDEMPOTENCY = "IDEMPOTENCY_RECORD"
 
 class ApplicationStatus(str, Enum):
     IN_PROGRESS = "IN_PROGRESS"
-    # Later phases: SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, NEEDS_INFO
+    SUBMITTED = "SUBMITTED"
+    # Later phases: UNDER_REVIEW, APPROVED, REJECTED, NEEDS_INFO
 
 
 def utc_now_iso() -> str:
