@@ -9,6 +9,8 @@ the repo for input data.
 """
 
 from __future__ import annotations
+import concurrent.futures
+
 
 from common.errors import DeadlineGuard
 from adapters.ai_adapter import AIAdapter, AIAdapterError
@@ -31,6 +33,25 @@ REQUIRED_DOCUMENT_TYPES = (
     DocumentType.BANK_EVIDENCE,
 )
 HIGH_TICKET_THRESHOLD_CENTS = 10_000 * 100  # $10,000 — configurable, documented, not hardcoded logic
+
+AI_CALL_RESERVE_SECONDS = 1.0  # headroom kept for saving the result and building the response
+
+
+def _call_ai(fn, deadline: DeadlineGuard, *args):
+    """Run one AI adapter call under a HARD timeout derived from the remaining
+    deadline (spec 7.1: never wait indefinitely for AI). A hanging adapter is
+    abandoned and reported as AIAdapterError, so callers fall back safely."""
+    timeout = deadline.remaining() - AI_CALL_RESERVE_SECONDS
+    if timeout <= 0:
+        raise AIAdapterError("No time budget left for the AI call")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fn, *args)
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as exc:
+        raise AIAdapterError("AI call timed out") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def run_evaluation(
@@ -70,7 +91,7 @@ def _summarize_business_profile(
         )
 
     try:
-        return ai.summarize_business_profile(description, industry or "", deadline)
+        return _call_ai(ai.summarize_business_profile, deadline, description, industry or "", deadline)
     except AIAdapterError:
         # Fail safely, per spec: AI failure must never break the whole
         # evaluation - the rest of the response (statement analysis, risk
@@ -120,7 +141,7 @@ def _analyze_statement(
         return None  # nothing to analyze - no statement provided or uploaded
 
     try:
-        extraction = ai.extract_statement(statement_doc.original_filename, deadline)
+        extraction = _call_ai(ai.extract_statement, deadline, statement_doc.original_filename, deadline)
     except AIAdapterError:
         extraction = StatementExtraction(
             source="ai_mock_extraction",
