@@ -98,7 +98,7 @@ These are documented in the README as well:
 - There is no authentication.
 - Document checksums are client-reported and not re-verified.
 - Upload validation is partial: the 25 MB cap and the content type allowlist apply to the declared values at presign; on completion only the object's existence and actual size are read back from S3, and the size is not compared with the declared size. There is no file-signature check.
-- There is no web UI.
+- The web UI is a single static page for the local demo only; it is not deployed and has no automated tests.
 - The MCC catalog is a 35-code subset created with AI assistance, with no scripted import and no recorded per-entry provenance.
 
 ## AI inside the product

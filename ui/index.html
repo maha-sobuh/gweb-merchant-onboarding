@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merchant Onboarding</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5b6672; --line: #d9dee5;
+    --accent: #1f5eff; --ok: #0a7d3c; --err: #b3261e; --warn: #8a5a00; --chip: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171b; --card: #1c2026; --text: #e8ebef; --muted: #9aa5b1; --line: #313842;
+            --accent: #6f9bff; --ok: #4cc283; --err: #ff8a80; --warn: #e0b45c; --chip: #262c34; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { margin: 0; font-size: 18px; }
+  #app-badge { color: var(--muted); font-size: 13px; }
+  #steps { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px; }
+  #steps button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  #steps button .num { display: inline-block; min-width: 18px; text-align: center; font-weight: 600; }
+  #steps button.done { border-color: var(--ok); }
+  #steps button.current { background: var(--accent); border-color: var(--accent); color: #fff; }
+  main { max-width: 860px; margin: 0 auto; padding: 8px 20px 60px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-top: 12px; }
+  .panel h2 { margin-top: 0; font-size: 18px; }
+  .panel h3 { font-size: 15px; margin: 18px 0 6px; }
+  #message { margin-top: 12px; padding: 0; border-radius: 8px; }
+  #message.error, #message.ok, #message.info { padding: 10px 14px; border: 1px solid var(--line); }
+  #message.error { color: var(--err); border-color: var(--err); }
+  #message.ok { color: var(--ok); border-color: var(--ok); }
+  .banner { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; margin-top: 10px; }
+  input[type=text], input[type=email], input[type=tel], input[type=date], input[type=number], select, textarea {
+    width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { font: inherit; }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 9px 16px; cursor: pointer; }
+  button.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0 4px; text-decoration: underline; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; color: var(--muted); }
+  .badge.req { color: var(--err); }
+  .badge.tier-ENHANCED_REVIEW { color: var(--warn); }
+  .badge.tier-RESTRICTED { color: var(--err); }
+  .badge.tier-STANDARD { color: var(--ok); }
+  .doc { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+  .doc:first-of-type { border-top: 0; }
+  .doc-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .doc-actions input[type=file] { max-width: 240px; font-size: 13px; }
+  progress { width: 120px; }
+  .option { display: block; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; color: var(--text); font-size: 14px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 6px 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  ul.plain { padding-left: 18px; margin: 6px 0; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; max-height: 360px; font-size: 12px; }
+  code { background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 12px; }
+  .row > div { flex: 1 1 260px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Merchant onboarding</h1>
+  <div id="app-badge" aria-live="polite"></div>
+</header>
+<nav id="steps" aria-label="Progress"></nav>
+
+<main>
+  <div id="message" role="status" aria-live="polite"></div>
+  <div id="submitted-banner" class="banner" hidden>This application has been submitted and is locked for review.</div>
+
+  <!-- 1. Start / resume -->
+  <section id="step-start" class="panel" hidden>
+    <h2>Start or resume</h2>
+    <p class="hint">Your progress is saved on the server after every step, so you can leave and come back with your application ID.</p>
+    <div id="resume-box" hidden>
+      <p>Application in progress on this browser: <code id="saved-id"></code></p>
+      <div class="actions">
+        <button type="button" class="primary" id="btn-continue">Continue</button>
+        <button type="button" class="secondary" id="btn-forget">Forget it</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="btn-new">Start a new application</button>
+    </div>
+    <div class="row">
+      <div>
+        <label for="resume-id">Resume with an application ID</label>
+        <input type="text" id="resume-id" autocomplete="off" spellcheck="false">
+      </div>
+      <button type="button" class="secondary" id="btn-resume">Resume</button>
+    </div>
+  </section>
+
+  <!-- 2. People -->
+  <section id="step-person" class="panel" hidden>
+    <h2>Control person and owners</h2>
+    <p class="hint">At least one control person is required. Add every beneficial owner too. Full ID numbers are never stored; only the last four characters.</p>
+    <ul id="person-list" class="plain"></ul>
+    <form id="person-form" novalidate>
+      <div class="grid">
+        <div><label for="p-first">First name *</label><input type="text" id="p-first" name="first_name" autocomplete="off"></div>
+        <div><label for="p-middle">Middle name</label><input type="text" id="p-middle" name="middle_name" autocomplete="off"></div>
+        <div><label for="p-last">Last name *</label><input type="text" id="p-last" name="last_name" autocomplete="off"></div>
+        <div><label for="p-dob">Date of birth</label><input type="date" id="p-dob" name="date_of_birth"></div>
+        <div><label for="p-email">Email</label><input type="email" id="p-email" name="email" autocomplete="off"></div>
+        <div><label for="p-phone">Phone</label><input type="tel" id="p-phone" name="phone" autocomplete="off"></div>
+        <div><label for="p-title">Title in the business</label><input type="text" id="p-title" name="title" autocomplete="off"></div>
+        <div><label for="p-own">Ownership %</label><input type="number" id="p-own" name="ownership_percentage" min="0" max="100" step="0.01"></div>
+      </div>
+      <label class="check"><input type="checkbox" name="is_control_person"> Control person</label>
+      <label class="check"><input type="checkbox" name="is_beneficial_owner"> Beneficial owner</label>
+      <label class="check"><input type="checkbox" name="consent"> I accept the terms and attest that this information is accurate (terms version v1) *</label>
+      <div class="actions">
+        <button type="submit" class="primary">Save person</button>
+        <button type="button" class="secondary" id="person-new">Add another person</button>
+        <button type="button" class="secondary" data-goto="business">Next: business</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 3. Business -->
+  <section id="step-business" class="panel" hidden>
+    <h2>Business</h2>
+    <form id="business-form" novalidate>
+      <div class="grid">
+        <div><label for="b-legal">Legal business name *</label><input type="text" id="b-legal" name="legal_name" autocomplete="off"></div>
+        <div><label for="b-dba">DBA / trade name</label><input type="text" id="b-dba" name="dba_name" autocomplete="off"></div>
+        <div>
+          <label for="b-entity">Entity type *</label>
+          <select id="b-entity" name="entity_structure">
+            <option value="">Select...</option>
+            <option value="SOLE_PROP">Sole proprietor</option>
+            <option value="LLC">LLC</option>
+            <option value="PARTNERSHIP">Partnership</option>
+            <option value="PRIVATE_CORP">Corporation (private)</option>
+            <option value="PUBLIC_CORP">Corporation (public)</option>
+            <option value="NON_PROFIT">Nonprofit</option>
+            <option value="GOVERNMENT">Government</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <div>
+          <label for="b-taxid">Tax ID (EIN/TIN) *</label>
+          <input type="text" id="b-taxid" name="tax_id" autocomplete="off">
+          <span class="hint" id="tax-hint">Only the last four characters are stored.</span>
+        </div>
+        <div>
+          <label for="b-taxtype">Tax ID type</label>
+          <select id="b-taxtype" name="tax_id_type"><option value="EIN">EIN</option><option value="SSN">SSN</option><option value="OTHER">Other</option></select>
+        </div>
+        <div><label for="b-fdate">Formation date</label><input type="date" id="b-fdate" name="formation_date"></div>
+        <div><label for="b-fstate">Formation state / province</label><input type="text" id="b-fstate" name="formation_state" autocomplete="off"></div>
+        <div><label for="b-fcountry">Formation country (2-letter code)</label><input type="text" id="b-fcountry" name="formation_country" maxlength="2" autocomplete="off"></div>
+        <div><label for="b-web">Website</label><input type="text" id="b-web" name="website" autocomplete="off"></div>
+        <div><label for="b-email">Business email</label><input type="email" id="b-email" name="email" autocomplete="off"></div>
+        <div><label for="b-phone">Business phone</label><input type="tel" id="b-phone" name="phone" autocomplete="off"></div>
+        <div><label for="b-industry">Industry</label><input type="text" id="b-industry" name="industry_description" autocomplete="off"></div>
+      </div>
+      <h3>Operating address</h3>
+      <div class="grid">
+        <div><label for="b-a1">Address line 1</label><input type="text" id="b-a1" name="addr_line1" autocomplete="off"></div>
+        <div><label for="b-city">City</label><input type="text" id="b-city" name="addr_city" autocomplete="off"></div>
+        <div><label for="b-st">State / province</label><input type="text" id="b-st" name="addr_state" autocomplete="off"></div>
+        <div><label for="b-zip">Postal code</label><input type="text" id="b-zip" name="addr_postal" autocomplete="off"></div>
+        <div><label for="b-ctry">Country (2-letter code)</label><input type="text" id="b-ctry" name="addr_country" maxlength="2" autocomplete="off"></div>
+      </div>
+      <h3>Description and volumes</h3>
+      <label for="b-desc">What does the business sell, and how? *</label>
+      <textarea id="b-desc" name="business_description"></textarea>
+      <div class="grid">
+        <div><label for="b-vol">Expected annual card volume (USD)</label><input type="number" id="b-vol" name="annual_volume" min="0" step="0.01"></div>
+        <div><label for="b-ticket">Average ticket (USD)</label><input type="number" id="b-ticket" name="avg_ticket" min="0" step="0.01"></div>
+      </div>
+      <div class="actions">
+        <button type="submit" class="primary">Save business</button>
+        <button type="button" class="secondary" data-goto="person">Back</button>
+        <button type="button" class="secondary" data-goto="documents">Next: documents</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 4. Documents -->
+  <section id="step-documents" class="panel" hidden>
+    <h2>Documents</h2>
+    <p class="hint">PDF, JPEG or PNG, up to 25 MB. Files go straight to storage; the server never handles the file itself.</p>
+    <div id="doc-list"></div>
+    <div class="actions">
+      <button type="button" class="secondary" data-goto="business">Back</button>
+      <button type="button" class="secondary" data-goto="mcc">Next: business type</button>
+    </div>
+  </section>
+
+  <!-- 5. MCC -->
+  <section id="step-mcc" class="panel" hidden>
+    <h2>Business type (MCC)</h2>
+    <p class="hint">Choose your industry and describe the business. We suggest merchant category codes; you confirm or correct the choice. Some categories are flagged for manual review.</p>
+    <form id="mcc-form" novalidate>
+      <div class="grid">
+        <div><label for="m-ind">Industry *</label><input type="text" id="m-ind" name="selected_industry" autocomplete="off"></div>
+        <div><label for="m-prov">Processor (optional, for policy overrides)</label><input type="text" id="m-prov" name="provider" autocomplete="off"></div>
+      </div>
+      <label for="m-desc">Business description *</label>
+      <textarea id="m-desc" name="business_description"></textarea>
+      <div class="actions">
+        <button type="button" class="primary" id="btn-suggest">Suggest MCC</button>
+      </div>
+    </form>
+    <div id="mcc-proposals" role="radiogroup" aria-label="Suggested MCCs"></div>
+    <h3>Or search the catalog</h3>
+    <div class="row">
+      <div><label for="m-search">Search by code or keyword</label><input type="text" id="m-search" autocomplete="off"></div>
+      <button type="button" class="secondary" id="btn-search">Search</button>
+    </div>
+    <div id="mcc-search-results"></div>
+    <div class="actions">
+      <button type="button" class="primary" id="btn-confirm-mcc">Confirm selected MCC</button>
+      <button type="button" class="secondary" data-goto="documents">Back</button>
+      <button type="button" class="secondary" data-goto="evaluate">Next: evaluation</button>
+    </div>
+    <div id="mcc-result" class="hint"></div>
+  </section>
+
+  <!-- 6. Evaluation -->
+  <section id="step-evaluate" class="panel" hidden>
+    <h2>Evaluation</h2>
+    <p class="hint">Summarizes the business profile and highlights information that may need manual review. If you have a current processing statement, enter its figures to compare the effective rate. The rate is calculated with plain arithmetic, not by the AI.</p>
+    <form id="eval-form" novalidate>
+      <label class="check"><input type="checkbox" name="has_statement" id="has-statement"> I have a current processing statement</label>
+      <div id="statement-fields" hidden>
+        <div class="grid">
+          <div><label for="s-proc">Processor</label><input type="text" id="s-proc" name="processor" autocomplete="off"></div>
+          <div><label for="s-period">Statement period (YYYY-MM)</label><input type="text" id="s-period" name="statement_period" placeholder="2026-08" autocomplete="off"></div>
+          <div><label for="s-vol">Monthly volume (USD)</label><input type="number" id="s-vol" name="monthly_volume" min="0" step="0.01"></div>
+          <div><label for="s-count">Monthly transactions</label><input type="number" id="s-count" name="txn_count" min="1" step="1"></div>
+          <div><label for="s-rate">Discount rate (%)</label><input type="number" id="s-rate" name="discount_rate" min="0" max="100" step="0.01"></div>
+          <div><label for="s-fee">Fee per transaction (USD)</label><input type="number" id="s-fee" name="per_txn_fee" min="0" step="0.01"></div>
+          <div><label for="s-mfee">Monthly fees (USD)</label><input type="number" id="s-mfee" name="monthly_fee" min="0" step="0.01"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit" class="primary">Run evaluation</button>
+        <button type="button" class="secondary" data-goto="mcc">Back</button>
+        <button type="button" class="secondary" data-goto="review">Next: review</button>
+      </div>
+    </form>
+    <div id="eval-result"></div>
+  </section>
+
+  <!-- 7. Review -->
+  <section id="step-review" class="panel" hidden>
+    <h2>Review and submit</h2>
+    <div id="review-body"></div>
+    <div class="actions">
+      <button type="button" class="primary" id="btn-submit">Submit application</button>
+      <button type="button" class="secondary" data-goto="evaluate">Back</button>
+    </div>
+    <div id="submission-out" hidden>
+      <h3>Internal review payload</h3>
+      <pre id="submission-json"></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // Same origin by default. To point the UI at a deployed API, set this to its URL
+  // (the API must then allow CORS).
+  var API_BASE = "";
+
+  var STEPS = [
+    { id: "start", label: "Start" },
+    { id: "person", label: "People" },
+    { id: "business", label: "Business" },
+    { id: "documents", label: "Documents" },
+    { id: "mcc", label: "Business type" },
+    { id: "evaluate", label: "Evaluation" },
+    { id: "review", label: "Review" }
+  ];
+  var DOC_TYPES = [
+    ["GOVERNMENT_ID", "Government ID", "required"],
+    ["BUSINESS_REGISTRATION", "Business registration", "required"],
+    ["BANK_EVIDENCE", "Bank evidence (voided check or statement)", "required"],
+    ["BUSINESS_LICENSE", "Business license", "if applicable"],
+    ["PROCESSING_STATEMENT", "Processing statement", "optional"],
+    ["ADDITIONAL_EVIDENCE", "Additional evidence", "optional"]
+  ];
+  var ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+  var MAX_BYTES = 25 * 1024 * 1024;
+
+  var appId = null;
+  try { appId = localStorage.getItem("applicationId"); } catch (e) { appId = null; }
+  var state = null;
+  var current = "start";
+  var editingPersonId = null;
+  var proposals = [];
+  var chosenMcc = null;
+
+  function $(selector) { return document.querySelector(selector); }
+  function esc(value) {
+    return String(value === undefined || value === null ? "" : value).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function val(form, name) { return form.elements[name].value.trim(); }
+  function setVal(form, name, value) {
+    if (value !== undefined && value !== null) { form.elements[name].value = value; }
+  }
+  function clean(obj) {
+    var out = {};
+    Object.keys(obj).forEach(function (k) {
+      var v = obj[k];
+      if (v === "" || v === null || v === undefined) { return; }
+      if (typeof v === "number" && isNaN(v)) { return; }
+      out[k] = v;
+    });
+    return out;
+  }
+  function dollarsToCents(text) {
+    if (text === "") { return ""; }
+    return Math.round(Number(text) * 100);
+  }
+  function usd(cents) {
+    if (cents === undefined || cents === null) { return "-"; }
+    return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
+  }
+  function message(text, kind) {
+    var el = $("#message");
+    el.textContent = text || "";
+    el.className = text ? (kind || "info") : "";
+  }
+
+  async function api(method, path, body, extraHeaders) {
+    var options = { method: method, headers: Object.assign({}, extraHeaders) };
+    if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    var res;
+    try {
+      res = await fetch(API_BASE + path, options);
+    } catch (e) {
+      throw new Error("Cannot reach the API. Is the server running?");
+    }
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) {
+      var err = new Error(data && data.error ? data.error.message : "Request failed (HTTP " + res.status + ")");
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function remember(id) {
+    appId = id;
+    try { localStorage.setItem("applicationId", id); } catch (e) { /* ignore */ }
+  }
+  function forget() {
+    appId = null;
+    state = null;
+    try { localStorage.removeItem("applicationId"); } catch (e) { /* ignore */ }
+  }
+
+  async function refresh() {
+    try {
+      state = await api("GET", "/applications/" + encodeURIComponent(appId));
+    } catch (e) {
+      if (e.status === 404) {
+        forget();
+        message("Application not found. The local demo server keeps data in memory, so restarting it clears all applications.", "error");
+        go("start");
+        return false;
+      }
+      throw e;
+    }
+    renderAll();
+    return true;
+  }
+
+  // ---- step logic ------------------------------------------------------
+
+  function stepDone(id) {
+    if (!state) { return id === "start"; }
+    var missing = state.missingItems || [];
+    switch (id) {
+      case "start": return true;
+      case "person": return state.persons.some(function (p) { return p.isControlPerson; });
+      case "business": return !!state.business && !missing.some(function (m) { return m.indexOf("business") === 0; });
+      case "documents": return !missing.some(function (m) { return m.indexOf("document") === 0; });
+      case "mcc": return !!(state.classification && state.classification.confirmedMcc);
+      case "evaluate": return !!state.evaluation;
+      case "review": return state.status === "SUBMITTED";
+      default: return false;
+    }
+  }
+  function firstIncompleteStep() {
+    for (var i = 1; i < STEPS.length - 1; i++) {
+      if (!stepDone(STEPS[i].id)) { return STEPS[i].id; }
+    }
+    return "review";
+  }
+
+  function go(id) {
+    if (id !== "start" && !appId) { id = "start"; }
+    current = id;
+    STEPS.forEach(function (s) { $("#step-" + s.id).hidden = s.id !== id; });
+    if (id === "start") { renderStart(); }
+    if (id === "business") { fillBusinessForm(); }
+    if (id === "mcc") { prefillMcc(); }
+    renderNav();
+    if (state) { lockIfSubmitted(); }
+    window.scrollTo(0, 0);
+  }
+
+  // ---- rendering -------------------------------------------------------
+
+  function renderNav() {
+    $("#steps").innerHTML = STEPS.map(function (s, i) {
+      var done = stepDone(s.id) && s.id !== "start";
+      var cls = (s.id === current ? "current " : "") + (done ? "done" : "");
+      return '<button type="button" class="' + cls + '" data-goto="' + s.id + '"' +
+        (s.id === current ? ' aria-current="step"' : "") + '><span class="num">' +
+        (done ? "&#10003;" : i + 1) + "</span> " + esc(s.label) + "</button>";
+    }).join("");
+  }
+
+  function renderBadge() {
+    var el = $("#app-badge");
+    el.textContent = appId && state ? "Application " + appId.slice(0, 8) + "... | " + state.status : "";
+  }
+
+  function renderStart() {
+    $("#resume-box").hidden = !appId;
+    $("#saved-id").textContent = appId || "";
+  }
+
+  function renderPersons() {
+    var persons = state ? state.persons : [];
+    $("#person-list").innerHTML = persons.length ? persons.map(function (p) {
+      return "<li>" + esc(p.firstName) + " " + esc(p.lastName) + " " +
+        (p.isControlPerson ? '<span class="badge">control person</span> ' : "") +
+        (p.isBeneficialOwner ? '<span class="badge">beneficial owner</span> ' : "") +
+        (p.ownershipPercentage !== undefined ? '<span class="badge">' + esc(p.ownershipPercentage) + "%</span> " : "") +
+        '<button type="button" class="link" data-edit="' + esc(p.personId) + '">Edit</button></li>';
+    }).join("") : "<li>No people added yet.</li>";
+  }
+
+  function fillPersonForm(person) {
+    var f = $("#person-form");
+    f.reset();
+    editingPersonId = person ? person.personId : null;
+    if (!person) { return; }
+    setVal(f, "first_name", person.firstName);
+    setVal(f, "middle_name", person.middleName);
+    setVal(f, "last_name", person.lastName);
+    setVal(f, "date_of_birth", person.dateOfBirth);
+    setVal(f, "email", person.email);
+    setVal(f, "phone", person.phone);
+    setVal(f, "title", person.title);
+    setVal(f, "ownership_percentage", person.ownershipPercentage);
+    f.elements["is_control_person"].checked = !!person.isControlPerson;
+    f.elements["is_beneficial_owner"].checked = !!person.isBeneficialOwner;
+    f.elements["consent"].checked = !!person.consentAcceptedAt;
+  }
+
+  function fillBusinessForm() {
+    var f = $("#business-form");
+    var b = state && state.business;
+    f.reset();
+    $("#tax-hint").textContent = "Only the last four characters are stored.";
+    if (!b) { return; }
+    setVal(f, "legal_name", b.legalName);
+    setVal(f, "dba_name", b.dbaName);
+    setVal(f, "entity_structure", b.entityStructure);
+    setVal(f, "tax_id_type", b.taxIdType);
+    setVal(f, "formation_date", b.formationDate);
+    setVal(f, "formation_state", b.formationState);
+    setVal(f, "formation_country", b.formationCountry);
+    setVal(f, "website", b.website);
+    setVal(f, "email", b.email);
+    setVal(f, "phone", b.phone);
+    setVal(f, "industry_description", b.industryDescription);
+    setVal(f, "business_description", b.businessDescription);
+    var a = b.physicalAddress || {};
+    setVal(f, "addr_line1", a.line1);
+    setVal(f, "addr_city", a.city);
+    setVal(f, "addr_state", a.state);
+    setVal(f, "addr_postal", a.postal_code);
+    setVal(f, "addr_country", a.country);
+    if (b.annualProcessingVolume !== undefined) { setVal(f, "annual_volume", b.annualProcessingVolume / 100); }
+    if (b.averageTransactionAmount !== undefined) { setVal(f, "avg_ticket", b.averageTransactionAmount / 100); }
+    if (b.taxIdLastFour) {
+      $("#tax-hint").textContent = "On file: ending " + b.taxIdLastFour + ". For security, re-enter the full ID to save changes.";
+    }
+  }
+
+  function renderDocuments() {
+    var docs = state ? state.documents : [];
+    $("#doc-list").innerHTML = DOC_TYPES.map(function (t) {
+      var mine = docs.filter(function (d) { return d.documentType === t[0]; });
+      var received = mine.filter(function (d) { return d.status === "RECEIVED"; });
+      var status = received.length
+        ? "Received: " + received.map(function (d) { return esc(d.originalFilename); }).join(", ")
+        : (mine.length ? "Started, upload not finished" : "Not uploaded");
+      return '<div class="doc" data-type="' + t[0] + '"><div><strong>' + esc(t[1]) + '</strong> <span class="badge ' +
+        (t[2] === "required" ? "req" : "") + '">' + esc(t[2]) + '</span><div class="hint">' + status + "</div></div>" +
+        '<div class="doc-actions"><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-label="File for ' + esc(t[1]) + '">' +
+        '<button type="button" class="secondary" data-upload="' + t[0] + '">Upload</button>' +
+        '<progress max="1" value="0" hidden></progress></div></div>';
+    }).join("");
+  }
+
+  function prefillMcc() {
+    var f = $("#mcc-form");
+    var c = state && state.classification;
+    var b = state && state.business;
+    setVal(f, "selected_industry", c ? c.selectedIndustry : (b && b.industryDescription) || "");
+    setVal(f, "business_description", c ? c.businessDescription : (b && b.businessDescription) || "");
+    proposals = c ? c.proposedMccs : [];
+    chosenMcc = c && c.confirmedMcc ? c.confirmedMcc : (proposals[0] ? proposals[0].code : null);
+    $("#mcc-search-results").innerHTML = "";
+    renderProposals();
+    $("#mcc-result").textContent = c && c.confirmedMcc
+      ? "Confirmed MCC: " + c.confirmedMcc + (c.manualReviewRequired ? " (manual review required)" : "")
+      : "";
+  }
+
+  function renderProposals() {
+    $("#mcc-proposals").innerHTML = proposals.map(function (p) {
+      return '<label class="option"><input type="radio" name="mcc_choice" value="' + esc(p.code) + '"' +
+        (p.code === chosenMcc ? " checked" : "") + "> <strong>" + esc(p.code) + "</strong> " + esc(p.description) +
+        ' <span class="badge">' + Math.round(p.confidence * 100) + '% match</span> <span class="badge tier-' + esc(p.riskTier) + '">' +
+        esc(String(p.riskTier).replace(/_/g, " ")) + '</span><div class="hint">' + esc(p.reason) +
+        (p.riskReason ? " | " + esc(p.riskReason) : "") + "</div></label>";
+    }).join("");
+  }
+
+  function evaluationHtml(ev) {
+    var bp = ev.businessProfile;
+    var sa = ev.statementAnalysis;
+    var html = "<h3>Business profile</h3><p>" + esc(bp.summary_text) + "</p>";
+    if (!bp.ai_available) {
+      html += '<p><span class="badge tier-ENHANCED_REVIEW">AI summary unavailable, safe fallback used</span></p>';
+    }
+    html += "<h3>Rate analysis</h3>";
+    if (sa && sa.effective_rate_percent !== null && sa.effective_rate_percent !== undefined) {
+      html += "<p>Effective processing rate: <strong>" + esc(sa.effective_rate_percent) + "%</strong></p>" +
+        '<p class="hint">' + esc(sa.calculation_note) + "</p>";
+    } else {
+      html += '<p class="hint">Not calculated (no statement figures provided).</p>';
+    }
+    html += "<h3>Risk signals</h3>";
+    if (ev.riskSignals.length) {
+      html += '<ul class="plain">' + ev.riskSignals.map(function (s) {
+        return "<li><strong>" + esc(s.severity) + "</strong> " + esc(s.message) +
+          '<div class="hint">Source: ' + esc(s.source_fields.join(", ")) + "</div></li>";
+      }).join("") + "</ul>";
+    } else {
+      html += '<p class="hint">No risk signals raised.</p>';
+    }
+    return html;
+  }
+
+  function renderEvaluation() {
+    var ev = state && state.evaluation;
+    $("#eval-result").innerHTML = ev ? evaluationHtml(ev) : '<p class="hint">No evaluation has been run yet.</p>';
+  }
+
+  function renderReview() {
+    var el = $("#review-body");
+    if (!state) { el.innerHTML = ""; return; }
+    var b = state.business;
+    var html = "<h3>Application</h3><dl><dt>ID</dt><dd><code>" + esc(state.applicationId) + "</code></dd><dt>Status</dt><dd>" + esc(state.status) + "</dd></dl>";
+
+    html += "<h3>Business</h3>";
+    if (b) {
+      var a = b.physicalAddress || {};
+      html += "<dl><dt>Legal name</dt><dd>" + esc(b.legalName) + "</dd>" +
+        "<dt>Entity type</dt><dd>" + esc(b.entityStructure) + "</dd>" +
+        "<dt>Tax ID</dt><dd>" + (b.taxIdLastFour ? "ending " + esc(b.taxIdLastFour) : "-") + "</dd>" +
+        "<dt>Address</dt><dd>" + esc([a.line1, a.city, a.state, a.postal_code, a.country].filter(Boolean).join(", ") || "-") + "</dd>" +
+        "<dt>Description</dt><dd>" + esc(b.businessDescription || "-") + "</dd>" +
+        "<dt>Annual volume</dt><dd>" + usd(b.annualProcessingVolume) + "</dd>" +
+        "<dt>Average ticket</dt><dd>" + usd(b.averageTransactionAmount) + "</dd></dl>";
+    } else {
+      html += '<p class="hint">Not provided yet.</p>';
+    }
+
+    html += "<h3>People</h3>";
+    html += state.persons.length ? '<ul class="plain">' + state.persons.map(function (p) {
+      return "<li>" + esc(p.firstName) + " " + esc(p.lastName) + (p.isControlPerson ? " (control person)" : "") +
+        (p.isBeneficialOwner ? " (beneficial owner)" : "") + "</li>";
+    }).join("") + "</ul>" : '<p class="hint">None yet.</p>';
+
+    html += "<h3>Documents</h3>";
+    html += state.documents.length ? '<ul class="plain">' + state.documents.map(function (d) {
+      return "<li>" + esc(d.documentType) + ": " + esc(d.originalFilename) + " <span class=\"badge\">" + esc(d.status) + "</span></li>";
+    }).join("") + "</ul>" : '<p class="hint">None yet.</p>';
+
+    html += "<h3>Business type</h3>";
+    var c = state.classification;
+    html += c ? "<p>Confirmed MCC: <strong>" + esc(c.confirmedMcc || "not confirmed") + "</strong>" +
+      (c.manualReviewRequired ? ' <span class="badge tier-ENHANCED_REVIEW">manual review required</span>' : "") + "</p>" +
+      (c.proposedMccs[0] ? '<p class="hint">Top suggestion: ' + esc(c.proposedMccs[0].code) + " " + esc(c.proposedMccs[0].description) + "</p>" : "")
+      : '<p class="hint">Not classified yet.</p>';
+
+    html += "<h3>Evaluation</h3>";
+    var ev = state.evaluation;
+    if (ev) {
+      var rate = ev.statementAnalysis && ev.statementAnalysis.effective_rate_percent;
+      html += "<p>" + (rate !== null && rate !== undefined ? "Effective rate: <strong>" + esc(rate) + "%</strong>. " : "") +
+        esc(ev.riskSignals.length) + " risk signal(s).</p>";
+      if (ev.riskSignals.length) {
+        html += '<ul class="plain">' + ev.riskSignals.map(function (s) { return "<li>" + esc(s.message) + "</li>"; }).join("") + "</ul>";
+      }
+    } else {
+      html += '<p class="hint">Not run yet.</p>';
+    }
+
+    html += "<h3>Missing items</h3>";
+    html += state.missingItems.length
+      ? '<ul class="plain">' + state.missingItems.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>"
+      : '<p class="hint">Nothing is missing.</p>';
+
+    el.innerHTML = html;
+    $("#btn-submit").disabled = !state.readyToSubmit;
+  }
+
+  function lockIfSubmitted() {
+    var locked = !!state && state.status === "SUBMITTED";
+    $("#submitted-banner").hidden = !locked;
+    var controls = document.querySelectorAll(
+      "#step-person input, #step-person button:not([data-goto]), #step-business input, #step-business select, #step-business textarea, #step-business button:not([data-goto])," +
+      "#step-documents input, #step-documents button:not([data-goto]), #step-mcc input, #step-mcc textarea, #step-mcc button:not([data-goto])," +
+      "#step-evaluate input, #step-evaluate button:not([data-goto])"
+    );
+    Array.prototype.forEach.call(controls, function (el) { el.disabled = locked; });
+    if (locked) { $("#btn-submit").disabled = true; }
+  }
+
+  function renderAll() {
+    renderBadge();
+    renderPersons();
+    renderDocuments();
+    renderEvaluation();
+    renderReview();
+    renderNav();
+    lockIfSubmitted();
+  }
+
+  // ---- actions ---------------------------------------------------------
+
+  async function startNew() {
+    try {
+      var created = await api("POST", "/applications", {}, { "Idempotency-Key": (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())) });
+      remember(created.applicationId);
+      await refresh();
+      message("Application started. Your ID is saved in this browser; you can resume it any time.", "ok");
+      go("person");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function resume(id) {
+    if (!id) { message("Enter an application ID.", "error"); return; }
+    remember(id);
+    try {
+      if (await refresh()) {
+        message("Application loaded.", "ok");
+        go(firstIncompleteStep());
+      }
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function savePerson(ev) {
+    ev.preventDefault();
+    var f = ev.target;
+    if (!val(f, "first_name") || !val(f, "last_name")) { message("First name and last name are required.", "error"); return; }
+    if (!f.elements["consent"].checked) { message("Please accept the terms to save this person.", "error"); return; }
+    var payload = clean({
+      first_name: val(f, "first_name"),
+      middle_name: val(f, "middle_name"),
+      last_name: val(f, "last_name"),
+      date_of_birth: f.elements["date_of_birth"].value,
+      email: val(f, "email"),
+      phone: val(f, "phone"),
+      title: val(f, "title"),
+      ownership_percentage: val(f, "ownership_percentage") === "" ? "" : Number(val(f, "ownership_percentage")),
+      is_control_person: f.elements["is_control_person"].checked,
+      is_beneficial_owner: f.elements["is_beneficial_owner"].checked,
+      consent_accepted_at: new Date().toISOString(),
+      consent_terms_version: "v1"
+    });
+    if (editingPersonId) {
+      var existing = state.persons.filter(function (p) { return p.personId === editingPersonId; })[0];
+      payload.person_id = editingPersonId;
+      payload.expected_version = existing.version;
+    }
+    try {
+      await api("PATCH", "/applications/" + appId + "/applicant", payload);
+      fillPersonForm(null);
+      await refresh();
+      message("Person saved.", "ok");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function saveBusiness(ev) {
+    ev.preventDefault();
+    var f = ev.target;
+    if (!val(f, "legal_name") || !f.elements["entity_structure"].value) {
+      message("Legal business name and entity type are required.", "error");
+      return;
+    }
+    if (!val(f, "tax_id")) {
+      message("Enter the tax ID (EIN/TIN). It is never shown again; only the last four characters are stored.", "error");
+      return;
+    }
+    var address = clean({
+      line1: val(f, "addr_line1"),
+      city: val(f, "addr_city"),
+      state: val(f, "addr_state"),
+      postal_code: val(f, "addr_postal"),
+      country: val(f, "addr_country").toUpperCase()
+    });
+    var payload = clean({
+      legal_name: val(f, "legal_name"),
+      dba_name: val(f, "dba_name"),
+      entity_structure: f.elements["entity_structure"].value,
+      tax_id: val(f, "tax_id"),
+      tax_id_type: f.elements["tax_id_type"].value,
+      formation_date: f.elements["formation_date"].value,
+      formation_state: val(f, "formation_state"),
+      formation_country: val(f, "formation_country").toUpperCase(),
+      website: val(f, "website"),
+      email: val(f, "email"),
+      phone: val(f, "phone"),
+      industry_description: val(f, "industry_description"),
+      business_description: val(f, "business_description"),
+      physical_address: Object.keys(address).length ? address : "",
+      annual_processing_volume: dollarsToCents(val(f, "annual_volume")),
+      average_transaction_amount: dollarsToCents(val(f, "avg_ticket"))
+    });
+    if (state && state.business) { payload.expected_version = state.business.version; }
+    try {
+      await api("PATCH", "/applications/" + appId + "/business", payload);
+      await refresh();
+      fillBusinessForm();
+      message("Business saved.", "ok");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  function putWithProgress(url, file, headers, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      Object.keys(headers || {}).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable) { onProgress(e.loaded / e.total); } };
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) { resolve(); } else { reject(new Error("Upload failed (HTTP " + xhr.status + ")")); }
+      };
+      xhr.onerror = function () { reject(new Error("Upload failed (network error)")); };
+      xhr.send(file);
+    });
+  }
+
+  async function sha256Hex(file) {
+    var buffer = await file.arrayBuffer();
+    var hash = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.prototype.map.call(new Uint8Array(hash), function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+  }
+
+  async function uploadDocument(type, row) {
+    var input = row.querySelector('input[type="file"]');
+    var button = row.querySelector("button[data-upload]");
+    var bar = row.querySelector("progress");
+    var file = input.files[0];
+    if (!file) { message("Choose a file first.", "error"); return; }
+    if (ALLOWED_TYPES.indexOf(file.type) === -1) { message("Only PDF, JPEG or PNG files are accepted.", "error"); return; }
+    if (file.size === 0) { message("That file is empty.", "error"); return; }
+    if (file.size > MAX_BYTES) { message("Files can be at most 25 MB.", "error"); return; }
+    button.disabled = true;
+    bar.hidden = false;
+    bar.value = 0;
+    try {
+      var presign = await api("POST", "/applications/" + appId + "/documents/presign", {
+        document_type: type,
+        original_filename: file.name,
+        content_type: file.type,
+        declared_size_bytes: file.size
+      });
+      await putWithProgress(presign.uploadUrl, file, presign.requiredHeaders, function (fraction) { bar.value = fraction; });
+      var checksum = await sha256Hex(file);
+      await api("POST", "/applications/" + appId + "/documents/" + presign.documentId + "/complete", { checksum_sha256: checksum });
+      await refresh();
+      message("Uploaded " + file.name + ".", "ok");
+    } catch (e) {
+      button.disabled = false;
+      bar.hidden = true;
+      message(e.message, "error");
+    }
+  }
+
+  function mccBody(extra) {
+    var f = $("#mcc-form");
+    var body = clean({
+      selected_industry: val(f, "selected_industry"),
+      business_description: val(f, "business_description"),
+      provider: val(f, "provider")
+    });
+    return Object.assign(body, extra || {});
+  }
+
+  async function suggestMcc() {
+    var f = $("#mcc-form");
+    if (!val(f, "selected_industry") || !val(f, "business_description")) {
+      message("Enter an industry and a business description.", "error");
+      return;
+    }
+    try {
+      var result = await api("POST", "/applications/" + appId + "/classify", mccBody());
+      proposals = result.proposedMccs;
+      chosenMcc = proposals[0] ? proposals[0].code : null;
+      renderProposals();
+      await refresh();
+      message("Here are the suggested codes. Pick one and confirm it.", "ok");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function searchMcc() {
+    var query = $("#m-search").value.trim();
+    try {
+      var result = await api("GET", "/mcc?query=" + encodeURIComponent(query));
+      $("#mcc-search-results").innerHTML = result.results.length ? result.results.map(function (r) {
+        return '<label class="option"><input type="radio" name="mcc_choice" value="' + esc(r.code) + '"> <strong>' + esc(r.code) + "</strong> " + esc(r.description) + "</label>";
+      }).join("") : '<p class="hint">No matches.</p>';
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function confirmMcc() {
+    var f = $("#mcc-form");
+    var picked = document.querySelector('input[name="mcc_choice"]:checked');
+    if (!picked) { message("Select an MCC first (suggest one or search the catalog).", "error"); return; }
+    if (!val(f, "selected_industry") || !val(f, "business_description")) {
+      message("Enter an industry and a business description.", "error");
+      return;
+    }
+    try {
+      var result = await api("POST", "/applications/" + appId + "/classify", mccBody({ confirmed_mcc: picked.value }));
+      chosenMcc = result.confirmedMcc;
+      await refresh();
+      $("#mcc-result").textContent = "Confirmed MCC: " + result.confirmedMcc +
+        (result.manualReviewRequired ? " (this category needs manual review before approval)" : "");
+      message("Business type confirmed.", "ok");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function runEvaluation(ev) {
+    ev.preventDefault();
+    var f = ev.target;
+    var payload = {};
+    if (f.elements["has_statement"].checked) {
+      var statement = {
+        processor: val(f, "processor"),
+        statement_period: val(f, "statement_period"),
+        monthly_volume_cents: dollarsToCents(val(f, "monthly_volume")),
+        monthly_transaction_count: parseInt(val(f, "txn_count"), 10),
+        discount_rate_percent: val(f, "discount_rate") === "" ? "" : Number(val(f, "discount_rate")),
+        per_transaction_fee_cents: dollarsToCents(val(f, "per_txn_fee")),
+        monthly_fee_cents: dollarsToCents(val(f, "monthly_fee"))
+      };
+      var incomplete = Object.keys(statement).some(function (k) {
+        return statement[k] === "" || (typeof statement[k] === "number" && isNaN(statement[k]));
+      });
+      if (incomplete) { message("Fill in every statement field, or untick the statement box.", "error"); return; }
+      payload = { processing_statement: statement };
+    }
+    try {
+      await api("POST", "/applications/" + appId + "/evaluate", payload);
+      await refresh();
+      message("Evaluation complete.", "ok");
+    } catch (e) { message(e.message, "error"); }
+  }
+
+  async function submitApplication() {
+    try {
+      var result = await api("POST", "/applications/" + appId + "/submit");
+      await refresh();
+      $("#submission-json").textContent = JSON.stringify(result.snapshot, null, 2);
+      $("#submission-out").hidden = false;
+      message("Application submitted. It is now locked for review.", "ok");
+    } catch (e) {
+      if (e.data && e.data.missingItems) {
+        message("Cannot submit yet: " + e.data.missingItems.join("; "), "error");
+        try { await refresh(); } catch (e2) { /* ignore */ }
+      } else {
+        message(e.message, "error");
+      }
+    }
+  }
+
+  // ---- wiring ----------------------------------------------------------
+
+  document.addEventListener("click", function (e) {
+    var target = e.target;
+    if (!(target instanceof Element)) { return; }
+    var nav = target.closest("[data-goto]");
+    if (nav) { message(""); go(nav.getAttribute("data-goto")); return; }
+    var edit = target.closest("[data-edit]");
+    if (edit && state) {
+      var person = state.persons.filter(function (p) { return p.personId === edit.getAttribute("data-edit"); })[0];
+      fillPersonForm(person);
+      message("Editing " + person.firstName + " " + person.lastName + ". Save to apply changes.", "info");
+      return;
+    }
+    var up = target.closest("[data-upload]");
+    if (up) { uploadDocument(up.getAttribute("data-upload"), up.closest(".doc")); }
+  });
+
+  document.addEventListener("DOMContentLoaded", async function () {
+    $("#btn-new").addEventListener("click", startNew);
+    $("#btn-resume").addEventListener("click", function () { resume($("#resume-id").value.trim()); });
+    $("#btn-continue").addEventListener("click", async function () {
+      try { if (await refresh()) { go(firstIncompleteStep()); } } catch (e) { message(e.message, "error"); }
+    });
+    $("#btn-forget").addEventListener("click", function () { forget(); renderBadge(); renderNav(); renderStart(); message(""); });
+    $("#person-form").addEventListener("submit", savePerson);
+    $("#person-new").addEventListener("click", function () { fillPersonForm(null); message(""); });
+    $("#business-form").addEventListener("submit", saveBusiness);
+    $("#btn-suggest").addEventListener("click", suggestMcc);
+    $("#btn-search").addEventListener("click", searchMcc);
+    $("#btn-confirm-mcc").addEventListener("click", confirmMcc);
+    $("#eval-form").addEventListener("submit", runEvaluation);
+    $("#has-statement").addEventListener("change", function (e) { $("#statement-fields").hidden = !e.target.checked; });
+    $("#btn-submit").addEventListener("click", submitApplication);
+
+    if (appId) {
+      try { await refresh(); } catch (e) { message(e.message, "error"); }
+    }
+    go("start");
+  });
+})();
+</script>
+</body>
+</html>

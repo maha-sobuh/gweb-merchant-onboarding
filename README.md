@@ -34,6 +34,14 @@ pytest
 
 The tests run against moto (mocked DynamoDB and S3) and use fixture data only.
 
+### Run the API and the web UI locally
+
+```bash
+python scripts/local_api.py
+```
+
+Then open http://127.0.0.1:3000. The server runs the real Lambda handlers over HTTP on moto (no AWS needed) and serves the web UI from `ui/index.html`: a multi-step form (people, business, documents with upload progress, business type, evaluation, review and submit). Progress is saved on the server after every step, so an application can be resumed with its ID. Data lives in memory and is lost when the server stops. The only difference from AWS is document upload: the presigned URL is rewritten to a local endpoint that writes into the mocked bucket.
+
 ### Run the demo (no AWS account needed)
 
 ```bash
@@ -208,7 +216,7 @@ The intended approach (S3 versioning, lifecycle rules, TTL for abandoned applica
 
 These are documented rather than hidden:
 
-- **No web UI.** The API is exercised through `scripts/demo_flow.py` and the test suite.
+- **The web UI is a local demo.** `ui/index.html` is a single static page served by `scripts/local_api.py` against the mocked backend. It is not deployed and has no automated tests. Pointing it at a deployed API would need CORS on the API and on the S3 bucket, and the local server allows any origin, so it is for local use only.
 - **No authentication or authorization.** Any caller who knows an application ID can read or modify it.
 - **Not deployed and `sam local` not run.** Behavior is verified with moto and `sam validate`; the demo is a local simulation.
 - **Upload validation is partial.** The 25 MB cap and the PDF/JPEG/PNG allowlist apply to the declared values at presign. On completion only the object's existence and actual size are read back from S3, and the actual size is not compared with the declared size. There is no file-signature check, and the checksum is client-reported.

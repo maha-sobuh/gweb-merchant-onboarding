@@ -171,6 +171,6 @@ Logs are structured JSON with a correlation ID (the Lambda request ID) and the a
 - `submit_application` is two DynamoDB calls, not one transaction; a `transact_write_items` call would make it atomic.
 - The AWS SDK's built-in retries are not deadline-aware; production would set explicit connect/read timeouts and `max_attempts` on the boto3 client config.
 - No custom CloudWatch metrics or alarms.
-- No web UI. The API is exercised through `scripts/demo_flow.py` and the test suite.
+- The web UI (`ui/index.html`) is a local demo served by `scripts/local_api.py` against a mocked backend. It is not deployed and has no automated tests; using it against a deployed API would need CORS on the API and on the S3 bucket.
 - The AI adapter is a mock and there is no OCR.
 - Expected 409 conflicts are logged at ERROR level with a stack trace, which adds noise.
