@@ -75,13 +75,17 @@ Every item carries `entity_type`, `created_at`, `updated_at`, and `version`.
 | Pattern | Operation |
 |---------|-----------|
 | Load application | `GetItem` on `METADATA` |
-| Load the whole aggregate | `Query` on `PK = APP#{id}` |
+| Load the whole aggregate (resume and review) | `GET /applications/{id}` reads each singleton item with `GetItem`, and people and documents with one `Query` each. All items share the partition key, so a single `Query` on `PK` could also load it in one round trip. |
 | List people and owners | `Query` on `PK` with the person `SK` prefix |
 | List documents | `Query` on `PK` with `SK` prefix `DOC#` |
 | Fetch current evaluation | `GetItem` on `EVALUATION` |
 | Find submission status | `GetItem` on `METADATA` (status) and `SUBMISSION` (frozen snapshot) |
 | Search the MCC catalog | Packaged static JSON (`src/data/mcc_catalog.json`) searched in memory. The catalog is small, read-only, and changes only with a code deploy, so a table round trip would add latency and no value. |
 | Replay a create request | `GetItem` on the idempotency item |
+
+### Resume and review
+
+`GET /applications/{id}` returns the application metadata plus the business, persons, documents, classification and evaluation captured so far, a `missingItems` list (the same completeness rules `submit` enforces), and `readyToSubmit`. A client can use it to resume a partially completed application and to render the final review screen.
 
 ### Consistency
 
@@ -167,5 +171,6 @@ Logs are structured JSON with a correlation ID (the Lambda request ID) and the a
 - `submit_application` is two DynamoDB calls, not one transaction; a `transact_write_items` call would make it atomic.
 - The AWS SDK's built-in retries are not deadline-aware; production would set explicit connect/read timeouts and `max_attempts` on the boto3 client config.
 - No custom CloudWatch metrics or alarms.
+- No web UI. The API is exercised through `scripts/demo_flow.py` and the test suite.
 - The AI adapter is a mock and there is no OCR.
 - Expected 409 conflicts are logged at ERROR level with a stack trace, which adds noise.

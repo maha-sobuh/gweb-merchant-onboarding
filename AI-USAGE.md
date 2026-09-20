@@ -36,7 +36,7 @@ The commit history preserves the order of work.
 
 ## How the output was verified
 
-- Automated tests with moto, so there are no real AWS calls during the test run: 152 tests passing at the time of writing.
+- Automated tests with moto, so there are no real AWS calls during the test run: all tests pass (full output in `docs/pytest-output.txt`).
 - `sam validate` on `template.yaml`.
 - After every file save, a check of the file size and an import or test run (see the empty-file issue below).
 - The Docker/WSL2 setup on my machine did not work, so `sam local start-api` was never run. Behaviour is verified through the test suite and template validation, not through local API emulation.
@@ -69,6 +69,26 @@ The assessment spec allows 45 seconds, but an API Gateway REST API has a hard 29
 
 The original README still described only Phase 1 and mixed Python 3.12 and 3.13 statements. The Phase 1 prompt asked for Python 3.12, but the implementation runs on 3.13 to match the local environment. The README was rewritten to describe the final implementation consistently.
 
+### 7. The AI timeout guard was cooperative
+
+Writing the slow-dependency test showed that the adapter guard only checked the remaining time before a call. A genuinely hanging adapter would have blocked the request until Lambda's own timeout. A hard timeout (`_call_ai`: a worker thread plus `future.result(timeout=...)`) was added, and the test now proves the request returns before the deadline with a safe fallback.
+
+### 8. Numbers returned as strings from submit
+
+The end-to-end test showed submit returning numeric fields (for example the effective rate) as strings, because floats were converted to `Decimal` before the response was serialized. The conversion now happens only at the DynamoDB write.
+
+### 9. Wrong status in the review snapshot
+
+The demo transcript showed the snapshot reporting `IN_PROGRESS` while the application was `SUBMITTED`. Fixed, with the unit test updated.
+
+### 10. GET returned metadata only
+
+Reviewing the assessment against the code showed that `GET /applications/{id}` returned only the metadata, so a client could not resume or review an application. It now returns the full normalized state, the missing items and `readyToSubmit`.
+
+### 11. Documentation claims checked against the code
+
+While writing the security and MCC documentation, statements the assistant had made earlier were checked against the code and corrected. The upload checks are weaker than first described (see below), and the MCC catalog's provenance is not recorded even though a code comment names Visa and Mastercard as the source.
+
 ## Known weaknesses in the AI-generated work
 
 These are documented in the README as well:
@@ -77,6 +97,9 @@ These are documented in the README as well:
 - Nested evaluation output uses `snake_case` keys while the rest of the API uses `camelCase`.
 - There is no authentication.
 - Document checksums are client-reported and not re-verified.
+- Upload validation is partial: the 25 MB cap and the content type allowlist apply to the declared values at presign; on completion only the object's existence and actual size are read back from S3, and the size is not compared with the declared size. There is no file-signature check.
+- There is no web UI.
+- The MCC catalog is a 35-code subset created with AI assistance, with no scripted import and no recorded per-entry provenance.
 
 ## AI inside the product
 

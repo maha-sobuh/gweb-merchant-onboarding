@@ -2,10 +2,7 @@
 
 ## Summary
 
-```
-pytest -q
-155 passed in 38.37s
-```
+The full captured output of `pytest -q` is saved in `docs/pytest-output.txt`, and every test passes.
 
 Environment: Python 3.13.1, pytest 9.1.1. Tests run against moto (mocked DynamoDB and S3); no real AWS calls, no credentials, and only fixture data (no real PII).
 
@@ -25,7 +22,7 @@ pytest
 | Lambda handlers and service logic | `tests/unit/test_handlers.py`, `test_submit_handler.py`, `test_ai_adapter.py` |
 | Repositories (conditional writes, versions, idempotency) | `tests/unit/test_application_repo.py`, `test_business_repo.py`, `test_person_repo.py`, `test_document_repo.py`, `test_evaluation_repo.py`, `test_submission_repo.py` |
 | Slow dependency and the deadline | `tests/unit/test_slow_dependency.py` |
-| End-to-end flow | `tests/integration/test_full_journey.py` |
+| End-to-end flow and resume | `tests/integration/test_full_journey.py`, `tests/integration/test_resume_state.py` |
 
 ### End-to-end test
 

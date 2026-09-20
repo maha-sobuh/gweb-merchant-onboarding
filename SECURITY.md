@@ -16,7 +16,7 @@ The API collects business details, personal details of owners and control person
 
 **Generic error responses.** All failures use one error envelope (`{"error": {"code": ..., "message": ...}}`). Unexpected errors return `INTERNAL_ERROR` with no internal detail.
 
-**Private, encrypted document storage.** The S3 bucket has server-side encryption and a public access block configured in the template. Documents are uploaded directly with expiring presigned URLs bound to the declared content type, and object keys are non-guessable, so a document cannot be found by enumerating identifiers. File bytes never pass through Lambda. When an upload is confirmed, the size and content type are read back from S3 instead of trusting the client.
+**Private, encrypted document storage.** The S3 bucket has server-side encryption and a public access block configured in the template. Documents are uploaded directly with expiring presigned URLs bound to the declared content type, and object keys are non-guessable, so a document cannot be found by enumerating identifiers. File bytes never pass through Lambda. When an upload is confirmed, the object's existence and actual size are read back from S3 (HeadObject) instead of trusting the client.
 
 **Least-privilege IAM.** Each Lambda function has its own policy listing only the DynamoDB and S3 actions it needs. For example, the GET endpoints have `GetItem` only, and the MCC search function has no data-access policy at all.
 
@@ -38,7 +38,7 @@ The API collects business details, personal details of owners and control person
 | PII exposure through logs or error bodies | Mitigated: redacted structured logs, generic errors |
 | Guessing or enumerating uploaded documents | Mitigated: private bucket, non-guessable keys, presigned URLs |
 | Reuse of an idempotency key leaking data | Mitigated: hashed keys, replay returns the original result only |
-| Tampered document metadata | Partly mitigated: size and content type are read from S3 on completion, but `checksum_sha256` is client-reported and not re-verified server-side |
+| Tampered document metadata or oversized uploads | Partly mitigated: the 25 MB cap and the content type allowlist apply to the declared values, and the actual size is read from S3 on completion but is not compared with the declared size. `checksum_sha256` is client-reported and not re-verified, and there is no file-signature check |
 | Untrusted merchant text reaching an AI provider (prompt injection) | Not applicable today, since the adapter is a mock. With a real provider, treat merchant-supplied text as untrusted, keep the output schema-validated, and keep the deterministic calculations separate |
 | Unauthorized access to any endpoint | **Not mitigated**, see below |
 
@@ -52,7 +52,7 @@ The API collects business details, personal details of owners and control person
 - Use non-sequential, high-entropy application IDs (already UUIDs) together with ownership checks, not as the only protection.
 - Add API Gateway throttling and usage plans, and consider AWS WAF.
 - Move to customer-managed KMS keys for S3 and DynamoDB, and enable S3 versioning and access logging.
-- Enforce a maximum upload size (presigned URLs alone cannot cap it; a presigned POST with a `content-length-range` condition can) and scan uploaded files for malware.
+- On completion, compare the actual size and content type with the declared values and the size cap, and check the file signature. Enforce the size cap at upload time as well (presigned URLs alone cannot; a presigned POST with a `content-length-range` condition can), and scan uploaded files for malware.
 - Verify document integrity server-side (recompute the checksum after upload instead of trusting the client value).
 - Make `submit_application` atomic with a single `transact_write_items` call.
 - Retention and deletion policy for PII and documents, plus audit logging of reads and writes.
