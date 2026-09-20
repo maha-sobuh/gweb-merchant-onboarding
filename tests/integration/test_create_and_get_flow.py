@@ -24,8 +24,10 @@ def test_create_then_get_round_trip(dynamodb_table):
     get_result = get_handler({"pathParameters": {"id": application_id}}, _ctx())
     assert get_result["statusCode"] == 200
     fetched = json.loads(get_result["body"])
-    assert fetched == created
-
+    # GET returns the same metadata as create, plus the full state (empty here).
+    assert {key: fetched[key] for key in created} == created
+    assert fetched["persons"] == []
+    assert fetched["business"] is None
 
 def test_get_unknown_application_is_404(dynamodb_table):
     result = get_handler(
